@@ -3895,6 +3895,12 @@ window.openFuelModal = () => {
   document.getElementById('drf-amount').value = '';
   document.getElementById('drf-note').value = '';
   
+  // Hide DRF KM history buttons
+  const drfKmHistBtn = document.getElementById('drf-km-history-btn');
+  if (drfKmHistBtn) drfKmHistBtn.classList.add('hidden');
+  const drfKmHistIconBtn = document.getElementById('drf-km-history-icon-btn');
+  if (drfKmHistIconBtn) drfKmHistIconBtn.classList.add('hidden');
+  
   // Reset paste form textarea
   const modalMsgInput = document.getElementById('modal-input-message');
   if (modalMsgInput) modalMsgInput.value = '';
@@ -3919,6 +3925,18 @@ window.openFuelModal = () => {
 const closeFuelBtn = document.getElementById('close-diesel-req-modal');
 if (closeFuelBtn) closeFuelBtn.onclick = () => fuelModal.classList.add('hidden');
 
+// Helper to toggle DRF KM history button visibility based on vehicle number
+function updateDrfHistoryIconVisibility() {
+  const vehInput = document.getElementById('drf-vehicle');
+  const vNo = vehInput ? vehInput.value.trim() : '';
+  const hasVeh = vNo.length >= 2;
+  const btn = document.getElementById('drf-km-history-btn');
+  if (btn) btn.classList.toggle('hidden', !hasVeh);
+  const iconBtn = document.getElementById('drf-km-history-icon-btn');
+  if (iconBtn) iconBtn.classList.toggle('hidden', !hasVeh);
+}
+window.updateDrfHistoryIconVisibility = updateDrfHistoryIconVisibility;
+
 // Auto populate Vehicle type average on modal vehicle enter
 const drfVehicleInput = document.getElementById('drf-vehicle');
 const drfVtypeSelect = document.getElementById('drf-vtype');
@@ -3926,6 +3944,7 @@ const drfAvgInput = document.getElementById('drf-avg');
 
 if (drfVehicleInput) {
   const syncVehicleAvg = () => {
+    updateDrfHistoryIconVisibility();
     const vNo = drfVehicleInput.value.toUpperCase().trim();
     
     // Auto-fill rules for DG / Generator vehicles
@@ -3972,6 +3991,7 @@ if (drfVehicleInput) {
   };
   drfVehicleInput.addEventListener('change', syncVehicleAvg);
   drfVehicleInput.addEventListener('input', syncVehicleAvg);
+  drfVehicleInput.addEventListener('keyup', updateDrfHistoryIconVisibility);
 }
 
 // ==========================================
@@ -20395,16 +20415,136 @@ function closeDueMatchingHistoryModal() {
   if (historyModal) {
     historyModal.classList.add('hidden');
   }
-  // Re-open vehicle due card modal so the user returns to the breakdown card
+  const isFromDrf = window.currentDueCardContext && window.currentDueCardContext.openedFromDrf;
+  // Re-open vehicle due card modal only if NOT opened directly from Diesel Request Form
   const dueModal = document.getElementById('vehicle-due-card-modal');
-  if (dueModal && window.currentDueCardContext) {
+  if (dueModal && window.currentDueCardContext && !isFromDrf) {
     dueModal.classList.remove('hidden');
+  }
+}
+
+// Open Matching Entries History modal directly from Diesel Request Form
+function openDrfVehicleMatchingHistory() {
+  const vehInput = document.getElementById('drf-vehicle');
+  const rawVeh = vehInput ? vehInput.value.trim() : '';
+  if (!rawVeh) {
+    if (typeof toast !== 'undefined' && toast.warn) {
+      toast.warn("Please enter a Vehicle Number first.");
+    } else if (typeof showAlert === 'function') {
+      showAlert('warning', 'Notice', 'Please enter a Vehicle Number first.');
+    }
+    return;
+  }
+
+  const cleanVeh = rawVeh.toUpperCase().replace(/[^A-Z0-9]/gi, '');
+  const kmInput = document.getElementById('drf-km');
+  const reqKm = kmInput && kmInput.value ? (parseFloat(kmInput.value) || 0) : 0;
+
+  const vtypeSelect = document.getElementById('drf-vtype');
+  let vtype = vtypeSelect ? vtypeSelect.value.trim().toUpperCase() : '';
+
+  // 1. Try current month due details first
+  let data = typeof calculateVehicleMonthlyDue === 'function' ? calculateVehicleMonthlyDue(cleanVeh, reqKm, vtype, true) : null;
+  let type = 'current';
+
+  // 2. If no entries in current month, try last month
+  if (!data || !data.matchedEntries || data.matchedEntries.length === 0) {
+    if (typeof calculateVehicleLastMonthDue === 'function') {
+      const lastData = calculateVehicleLastMonthDue(cleanVeh, reqKm, vtype, true);
+      if (lastData && lastData.matchedEntries && lastData.matchedEntries.length > 0) {
+        data = lastData;
+        type = 'last';
+      }
+    }
+  }
+
+  // 3. Fallback: search all loaded history entries for this vehicle
+  if (!data || !data.matchedEntries || data.matchedEntries.length === 0) {
+    const entriesList = (typeof historyEntries !== 'undefined' && Array.isArray(historyEntries))
+      ? historyEntries
+      : (window.allLoadedEntries || []);
+    const matched = entriesList.filter(e => {
+      if (!e) return false;
+      const eVeh = String(e.vehicleNo || e.vehicle_no || e.vehicle || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
+      return eVeh === cleanVeh;
+    });
+
+    if (matched.length > 0) {
+      const typesMap = (typeof vehicleTypes !== 'undefined' && vehicleTypes) ? vehicleTypes : {};
+      let mileage = vtype && typesMap[vtype] ? parseFloat(typesMap[vtype]) : 0;
+      if (!mileage && typesMap[cleanVeh]) mileage = parseFloat(typesMap[cleanVeh]) || 0;
+      if (!mileage && matched[0]?.vehicleType && typesMap[matched[0].vehicleType.toUpperCase()]) {
+        mileage = parseFloat(typesMap[matched[0].vehicleType.toUpperCase()]) || 0;
+      }
+      if (!mileage) mileage = 4.0;
+      const activeRate = (typeof dieselRate !== 'undefined' && dieselRate > 0) ? dieselRate : 98.00;
+
+      data = {
+        vehicleNo: rawVeh.toUpperCase(),
+        vehicleType: vtype || (matched[0]?.vehicleType || 'Vehicle'),
+        monthName: 'All Entries',
+        mileage: mileage,
+        activeRate: activeRate,
+        endKm: reqKm,
+        matchedEntries: matched
+      };
+    }
+  }
+
+  if (!data || !data.matchedEntries || data.matchedEntries.length === 0) {
+    if (typeof toast !== 'undefined' && toast.warn) {
+      toast.warn("No matching entries found for vehicle " + rawVeh.toUpperCase());
+    } else if (typeof showAlert === 'function') {
+      showAlert('warning', 'Notice', "No matching entries found for vehicle " + rawVeh.toUpperCase());
+    }
+    return;
+  }
+
+  // Save current context for matching entries history & export
+  window.currentDueCardContext = {
+    vehicleNo: rawVeh.toUpperCase(),
+    type: type,
+    reqKm: reqKm,
+    vehicleType: data.vehicleType || vtype,
+    data: data,
+    openedFromDrf: true
+  };
+
+  // Update subtitle
+  const subtitleEl = document.getElementById('due-history-subtitle');
+  if (subtitleEl) {
+    subtitleEl.textContent = `${data.vehicleNo || rawVeh.toUpperCase()} • ${data.vehicleType || vtype || 'Vehicle'} • ${data.monthName || ''}`;
+  }
+
+  // Sort entries: Date ASC -> then KM ASC (so lower KM is 1st, higher KM is 2nd) -> then responseNumber ASC
+  const sorted = [...data.matchedEntries].sort((a, b) => {
+    const dA = (typeof parseDateStr === 'function' ? parseDateStr(a.date) : 0) || 0;
+    const dB = (typeof parseDateStr === 'function' ? parseDateStr(b.date) : 0) || 0;
+    const tA = dA.valueOf ? dA.valueOf() : 0;
+    const tB = dB.valueOf ? dB.valueOf() : 0;
+    if (tA !== tB) return tA - tB;
+    const kmA = parseFloat(String(a.currentKm || a.km || a.endKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
+    const kmB = parseFloat(String(b.currentKm || b.km || b.endKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
+    if (kmA !== kmB) return kmA - kmB;
+    return (parseInt(a.responseNumber || a.key || 0) || 0) - (parseInt(b.responseNumber || b.key || 0) || 0);
+  });
+
+  window.currentDueMatchingSorted = sorted;
+  window.currentCalcSortedEntries = sorted;
+
+  recalculateDueMatchingHistory(window.currentDueCardContext, sorted);
+
+  // Show matching history modal
+  const historyModal = document.getElementById('modal-matching-entries-history');
+  if (historyModal) {
+    historyModal.classList.remove('hidden');
   }
 }
 
 window.openVehicleDueCardModal = openVehicleDueCardModal;
 window.closeVehicleDueCardModal = closeVehicleDueCardModal;
 window.openDueCardMatchingHistory = openDueCardMatchingHistory;
+window.openDrfVehicleMatchingHistory = openDrfVehicleMatchingHistory;
 window.closeDueMatchingHistoryModal = closeDueMatchingHistoryModal;
 window.syncToCalculatorDom = syncToCalculatorDom;
 
