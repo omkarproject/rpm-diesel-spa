@@ -3895,9 +3895,7 @@ window.openFuelModal = () => {
   document.getElementById('drf-amount').value = '';
   document.getElementById('drf-note').value = '';
   
-  // Hide DRF KM history buttons
-  const drfKmHistBtn = document.getElementById('drf-km-history-btn');
-  if (drfKmHistBtn) drfKmHistBtn.classList.add('hidden');
+  // Hide DRF KM history button inside input
   const drfKmHistIconBtn = document.getElementById('drf-km-history-icon-btn');
   if (drfKmHistIconBtn) drfKmHistIconBtn.classList.add('hidden');
   
@@ -3930,8 +3928,6 @@ function updateDrfHistoryIconVisibility() {
   const vehInput = document.getElementById('drf-vehicle');
   const vNo = vehInput ? vehInput.value.trim() : '';
   const hasVeh = vNo.length >= 2;
-  const btn = document.getElementById('drf-km-history-btn');
-  if (btn) btn.classList.toggle('hidden', !hasVeh);
   const iconBtn = document.getElementById('drf-km-history-icon-btn');
   if (iconBtn) iconBtn.classList.toggle('hidden', !hasVeh);
 }
