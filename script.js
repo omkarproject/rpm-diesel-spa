@@ -3974,11 +3974,162 @@ if (drfVehicleInput) {
   drfVehicleInput.addEventListener('input', syncVehicleAvg);
 }
 
+// ==========================================
+// Quick Fill Options Management Logic
+// ==========================================
+const DEFAULT_QUICK_FILL_OPTIONS = ['Urea Request', 'Engine oil', 'Break oil', 'Steering oil'];
+let quickFillOptionsList = loadCache('rpm_quick_fill_options', DEFAULT_QUICK_FILL_OPTIONS);
+const quickFillOptionsRef = db.ref('config/quick_fill_options');
+
+function renderQuickFillDropdown() {
+  const select = document.getElementById('drf-quick-fill');
+  if (!select) return;
+  
+  let html = `<option class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="">Quick Fill...</option>`;
+  quickFillOptionsList.forEach(opt => {
+    const clean = String(opt).trim();
+    if (clean) {
+      html += `<option class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium" value="${clean}">${clean}</option>`;
+    }
+  });
+  html += `
+    <option class="bg-slate-100 dark:bg-slate-800 text-slate-400" disabled>──────────</option>
+    <option class="bg-blue-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold" value="__manage__">⚙️ Add / Remove Options...</option>
+  `;
+  select.innerHTML = html;
+}
+window.renderQuickFillDropdown = renderQuickFillDropdown;
+
+function openQuickFillManagerModal() {
+  const modal = document.getElementById('quick-fill-manager-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    renderQuickFillManagerList();
+    const input = document.getElementById('new-quick-fill-option-input');
+    if (input) {
+      input.value = '';
+      setTimeout(() => input.focus(), 80);
+    }
+  }
+}
+window.openQuickFillManagerModal = openQuickFillManagerModal;
+
+function closeQuickFillManagerModal() {
+  const modal = document.getElementById('quick-fill-manager-modal');
+  if (modal) modal.classList.add('hidden');
+}
+window.closeQuickFillManagerModal = closeQuickFillManagerModal;
+
+function renderQuickFillManagerList() {
+  const listContainer = document.getElementById('quick-fill-options-list');
+  const badge = document.getElementById('quick-fill-count-badge');
+  if (!listContainer) return;
+
+  if (badge) badge.textContent = `${quickFillOptionsList.length} Option${quickFillOptionsList.length === 1 ? '' : 's'}`;
+
+  if (quickFillOptionsList.length === 0) {
+    listContainer.innerHTML = `<div class="text-center py-6 text-xs text-slate-400 font-medium">No options available. Add one above!</div>`;
+    return;
+  }
+
+  let html = '';
+  quickFillOptionsList.forEach((opt, idx) => {
+    html += `
+      <div class="flex items-center justify-between p-2.5 bg-slate-100/70 dark:bg-slate-800/60 rounded-2xl border border-slate-200/50 dark:border-slate-700/50 transition-all hover:border-blue-500/40">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-6 h-6 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center text-[10px] font-bold shrink-0">
+            ${idx + 1}
+          </span>
+          <span class="text-xs font-bold text-slate-800 dark:text-white truncate">${opt}</span>
+        </div>
+        <button type="button" onclick="deleteQuickFillOption(${idx})" class="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors text-xs active:scale-95" title="Delete Option">
+          <i class="fas fa-trash-alt"></i>
+        </button>
+      </div>
+    `;
+  });
+  listContainer.innerHTML = html;
+}
+window.renderQuickFillManagerList = renderQuickFillManagerList;
+
+function saveQuickFillOptionsToDb() {
+  saveCache('rpm_quick_fill_options', quickFillOptionsList);
+  if (typeof db !== 'undefined' && db) {
+    quickFillOptionsRef.set(quickFillOptionsList).catch(err => {
+      console.warn("Failed to sync quick fill options to Firebase:", err);
+    });
+  }
+}
+
+function addNewQuickFillOption() {
+  const input = document.getElementById('new-quick-fill-option-input');
+  if (!input) return;
+  const val = input.value.trim();
+  if (!val) {
+    if (typeof toast !== 'undefined') toast.warn("Please enter an option name.");
+    return;
+  }
+  if (quickFillOptionsList.some(o => o.toLowerCase() === val.toLowerCase())) {
+    if (typeof toast !== 'undefined') toast.warn("This option already exists!");
+    return;
+  }
+
+  quickFillOptionsList.push(val);
+  saveQuickFillOptionsToDb();
+  input.value = '';
+  renderQuickFillManagerList();
+  renderQuickFillDropdown();
+  if (typeof toast !== 'undefined') toast.ok(`"${val}" added successfully!`);
+}
+window.addNewQuickFillOption = addNewQuickFillOption;
+
+function deleteQuickFillOption(idx) {
+  if (idx < 0 || idx >= quickFillOptionsList.length) return;
+  const removed = quickFillOptionsList.splice(idx, 1)[0];
+  saveQuickFillOptionsToDb();
+  renderQuickFillManagerList();
+  renderQuickFillDropdown();
+  if (typeof toast !== 'undefined') toast.info(`"${removed}" removed.`);
+}
+window.deleteQuickFillOption = deleteQuickFillOption;
+
+function resetQuickFillOptionsToDefault() {
+  if (!confirm("Are you sure you want to reset quick fill options to default presets?")) return;
+  quickFillOptionsList = [...DEFAULT_QUICK_FILL_OPTIONS];
+  saveQuickFillOptionsToDb();
+  renderQuickFillManagerList();
+  renderQuickFillDropdown();
+  if (typeof toast !== 'undefined') toast.ok("Reset to default options!");
+}
+window.resetQuickFillOptionsToDefault = resetQuickFillOptionsToDefault;
+
+// Firebase listener for real-time sync of Quick Fill options
+quickFillOptionsRef.on('value', snapshot => {
+  const val = snapshot.val();
+  if (Array.isArray(val) && val.length > 0) {
+    quickFillOptionsList = val;
+  } else if (val && typeof val === 'object') {
+    quickFillOptionsList = Object.values(val);
+  } else {
+    quickFillOptionsList = DEFAULT_QUICK_FILL_OPTIONS;
+  }
+  saveCache('rpm_quick_fill_options', quickFillOptionsList);
+  renderQuickFillDropdown();
+  if (!document.getElementById('quick-fill-manager-modal')?.classList.contains('hidden')) {
+    renderQuickFillManagerList();
+  }
+});
+
 // Quick Fill Dropdown logic
 const drfQuickFill = document.getElementById('drf-quick-fill');
 if (drfQuickFill) {
   drfQuickFill.addEventListener('change', function() {
     const val = this.value;
+    if (val === '__manage__') {
+      openQuickFillManagerModal();
+      this.value = '';
+      return;
+    }
     if (val) {
       const fromEl = document.getElementById('drf-from');
       const lastEl = document.getElementById('drf-last');
@@ -3988,6 +4139,22 @@ if (drfQuickFill) {
     }
   });
 }
+
+// Initial render
+renderQuickFillDropdown();
+
+// Support Enter key on input
+document.addEventListener('DOMContentLoaded', () => {
+  const newOptInput = document.getElementById('new-quick-fill-option-input');
+  if (newOptInput) {
+    newOptInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addNewQuickFillOption();
+      }
+    });
+  }
+});
 
 if (drfVtypeSelect) {
   drfVtypeSelect.onchange = () => {

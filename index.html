@@ -4543,14 +4543,16 @@
               <div class="relative">
                 <input type="text" id="drf-vehicle" list="drf-vehicle-list" class="calc-input uppercase pr-8" placeholder="E.G. MH04LY4604" required>
                 <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center">
-                  <select id="drf-quick-fill" class="opacity-0 absolute inset-0 w-full h-full cursor-pointer text-slate-900 dark:text-white">
+                  <select id="drf-quick-fill" class="opacity-0 absolute inset-0 w-full h-full cursor-pointer text-slate-900 dark:text-white" title="Quick Fill Presets">
                     <option class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="">Quick Fill...</option>
                     <option class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="Urea Request">Urea Request</option>
                     <option class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="Engine oil">Engine oil</option>
                     <option class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="Break oil">Break oil</option>
                     <option class="bg-white dark:bg-slate-800 text-slate-900 dark:text-white" value="Steering oil">Steering oil</option>
+                    <option class="bg-slate-100 dark:bg-slate-800 text-slate-400" disabled>──────────</option>
+                    <option class="bg-blue-50 dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold" value="__manage__">⚙️ Add / Remove Options...</option>
                   </select>
-                  <i class="fas fa-box text-slate-400 hover:text-amber-500 pointer-events-none transition-colors"></i>
+                  <i class="fas fa-box text-slate-400 hover:text-amber-500 pointer-events-none transition-colors" title="Quick Fill"></i>
                 </div>
               </div>
               <datalist id="drf-vehicle-list"></datalist>
@@ -4667,6 +4669,61 @@
             ⛽ Send Diesel Filled
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: QUICK FILL OPTIONS MANAGER -->
+  <div id="quick-fill-manager-modal" class="fixed inset-0 bg-slate-950/80 dark:bg-black/90 flex items-center justify-center z-[70] hidden backdrop-blur-md p-3 sm:p-5">
+    <div class="glass-panel w-full max-w-md mx-auto rounded-3xl border border-white/20 dark:border-white/10 flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 bg-white dark:bg-slate-900">
+      <!-- Modal Header -->
+      <div class="px-5 py-4 border-b border-slate-200/50 dark:border-slate-800/40 flex items-center justify-between bg-slate-100/50 dark:bg-slate-800/50">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center text-sm font-bold">
+            <i class="fas fa-magic"></i>
+          </div>
+          <div>
+            <h3 class="font-extrabold text-sm text-slate-800 dark:text-white">Quick Fill Options Manager</h3>
+            <p class="text-[11px] text-slate-400 font-medium">Add, remove or edit dropdown presets</p>
+          </div>
+        </div>
+        <button onclick="closeQuickFillManagerModal()" class="w-8 h-8 rounded-xl bg-slate-200/60 dark:bg-slate-800 text-slate-500 hover:text-rose-500 flex items-center justify-center transition-colors">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <!-- Add New Option Input Row -->
+      <div class="p-5 border-b border-slate-200/40 dark:border-slate-800/40 space-y-2">
+        <label class="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+          <i class="fas fa-plus-circle text-blue-500"></i> Add New Preset Option
+        </label>
+        <div class="flex gap-2">
+          <input type="text" id="new-quick-fill-option-input" placeholder="e.g. Gear oil, DEF Refill, Toll Cash..." class="calc-input flex-1 text-xs" maxlength="40">
+          <button type="button" onclick="addNewQuickFillOption()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 shrink-0 active:scale-95">
+            <i class="fas fa-plus"></i> Add
+          </button>
+        </div>
+      </div>
+
+      <!-- Current Options List -->
+      <div class="p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Active Options</span>
+          <span id="quick-fill-count-badge" class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/10 text-blue-500 dark:text-blue-400">4 Options</span>
+        </div>
+        <div id="quick-fill-options-list" class="space-y-2 max-h-56 overflow-y-auto pr-1">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-5 py-3.5 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200/50 dark:border-slate-800/40 flex items-center justify-between">
+        <button type="button" onclick="resetQuickFillOptionsToDefault()" class="text-xs text-slate-400 hover:text-amber-500 transition-colors font-medium flex items-center gap-1">
+          <i class="fas fa-undo-alt text-[10px]"></i> Reset Defaults
+        </button>
+        <button type="button" onclick="closeQuickFillManagerModal()" class="px-4 py-2 bg-slate-800 dark:bg-slate-700 hover:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition-all active:scale-95">
+          Done
+        </button>
       </div>
     </div>
   </div>
@@ -6800,7 +6857,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=116" defer></script>
+  <script src="script.js?v=117" defer></script>
   <script src="broadcast.js?v=3" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
