@@ -4421,13 +4421,13 @@ if (drfSendApprovedBtn) {
         const copyText = `🔔Diesel Request📢
 Response #APPROVED
 📅 Date & Time. : ${dispDate}, ${convertTo24Hour(payload.time)}
-%0A🚛 Vehicle No. : ${cleanVeh}
-%0A🚚 Vehicle Type. : ${payload.vehicleType}${avgVal ? ',' + avgVal : ''}
-%0A📍 From Location. : ${cleanFrom}
-%0A📍 Last Location. : ${cleanLast}
-%0A📊 Current KM. : ${payload.currentKm}
-%0A💸 Diesel (₹ INR). : ${payload.dieselAmount}
-%0A👮🏻 Vendor Name. : ${payload.vendorName}${noteText}`;
+🚛 Vehicle No. : ${cleanVeh}
+🚚 Vehicle Type. : ${payload.vehicleType}${avgVal ? ',' + avgVal : ''}
+📍 From Location. : ${cleanFrom}
+📍 Last Location. : ${cleanLast}
+📊 Current KM. : ${payload.currentKm}
+💸 Diesel (₹ INR). : ${payload.dieselAmount}
+👮🏻 Vendor Name. : ${payload.vendorName}${noteText}`;
 
         messages.push(copyText);
 
@@ -4772,13 +4772,13 @@ Response #${resp}
         const copyText = `🔔Diesel Request📢
 Response #APPROVED
 📅 Date & Time. : ${dispDate}, ${convertTo24Hour(time)}
-%0A🚛 Vehicle No. : ${vehicle}
-%0A🚚 Vehicle Type. : ${vtype}${avgVal ? ',' + avgVal : ''}
-%0A📍 From Location. : ${from}
-%0A📍 Last Location. : ${last}
-%0A📊 Current KM. : ${km}
-%0A💸 Diesel (₹ INR). : ${amount}
-%0A👮🏻 Vendor Name. : ${vendor}${noteText}`;
+🚛 Vehicle No. : ${vehicle}
+🚚 Vehicle Type. : ${vtype}${avgVal ? ',' + avgVal : ''}
+📍 From Location. : ${from}
+📍 Last Location. : ${last}
+📊 Current KM. : ${km}
+💸 Diesel (₹ INR). : ${amount}
+👮🏻 Vendor Name. : ${vendor}${noteText}`;
 
         return window.safeCopyToClipboard(copyText)
           .then(() => {
@@ -4817,6 +4817,9 @@ window.submitDrfPendingAction = submitDrfPendingAction;
 
 // Safe Clipboard Copy Helper
 window.safeCopyToClipboard = (text) => {
+  if (typeof text === 'string') {
+    text = text.replace(/%0A/gi, '\n');
+  }
   if (navigator.clipboard && navigator.clipboard.writeText) {
     return navigator.clipboard.writeText(text);
   }
@@ -22525,6 +22528,9 @@ window.confirmRejectDriverRequest = confirmRejectDriverRequest;
 
 // Copy to clipboard helper with execCommand fallback for non-secure contexts
 function copyToClipboard(text) {
+  if (typeof text === 'string') {
+    text = text.replace(/%0A/gi, '\n');
+  }
   if (navigator.clipboard && window.isSecureContext) {
     return navigator.clipboard.writeText(text);
   } else {
