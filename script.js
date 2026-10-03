@@ -106,7 +106,13 @@ const loadCache = (key, defaultVal) => {
 
 const saveCache = (key, data) => {
   try {
-    localStorage.setItem(key, JSON.stringify(data));
+    let payload = data;
+    // For large collections, cache only recent slice for instant cold-start paint
+    // to prevent localStorage quota exhaustion (5MB limit) and main-thread freeze
+    if (Array.isArray(data) && data.length > 200 && (key === 'rpm_cache_entries' || key === 'rpm_cache_urea_entries' || key === 'rpm_cache_driver_requests')) {
+      payload = data.slice(0, 200);
+    }
+    localStorage.setItem(key, JSON.stringify(payload));
   } catch(e) {
     console.warn("Cache save failed for", key, e);
   }
@@ -1834,57 +1840,104 @@ entriesRef.on('value', snapshot => {
     const val = snapshot.val();
     if (val) {
       const records = Object.values(val);
+      const totalLen = records.length;
       
-      // Keep all entries including UREA entries
-      records.forEach(r => {
-        if (!r) return;
+      const cleanEntries = [];
+      const cleanUrea = [];
+      const uniqueVehSet = new Set();
+      const uniqueVTypeSet = new Set();
+      const uniqueVendSet = new Set();
+      const uniqueFromLocSet = new Set();
+      const uniqueToLocSet = new Set();
+
+      for (let i = 0; i < totalLen; i++) {
+        const r = records[i];
+        if (!r) continue;
+
         if (r.vendorName === 'UREA REQUEST') {
           r.vendorName = 'RPM LOGISTICS PVT.LTD.';
-          entriesRef.child(r.responseNumber).update({ vendorName: 'RPM LOGISTICS PVT.LTD.' });
         }
-        // Strip heavy base64 photos from in-memory objects to keep memory and DOM ultra fast
-        if (r.receiptPhoto || (Array.isArray(r.receiptPhotos) && r.receiptPhotos.length > 0) || (r.receiptPhotos && typeof r.receiptPhotos === 'object' && Object.keys(r.receiptPhotos).length > 0) || r.capturedPhoto || r.stationPhoto) {
-          r.hasReceiptPhoto = true;
+
+        // Fast photo detection without heavy deoptimizing delete calls
+        if (!r.hasReceiptPhoto) {
+          if (r.receiptPhoto || (Array.isArray(r.receiptPhotos) && r.receiptPhotos.length > 0) || (r.receiptPhotos && typeof r.receiptPhotos === 'object' && Object.keys(r.receiptPhotos).length > 0) || r.capturedPhoto || r.stationPhoto) {
+            r.hasReceiptPhoto = true;
+          }
         }
-        if (r.capturedPhoto || r.stationPhoto) {
+        if (!r.hasCapturedPhoto && (r.capturedPhoto || r.stationPhoto)) {
           r.hasCapturedPhoto = true;
         }
-        delete r.receiptPhoto;
-        delete r.receiptPhotos;
-        delete r.capturedPhoto;
-        delete r.stationPhoto;
-
-        if (r.kmPhoto || r.photo || (Array.isArray(r.kmPhotos) && r.kmPhotos.length > 0) || (r.kmPhotos && typeof r.kmPhotos === 'object' && Object.keys(r.kmPhotos).length > 0)) {
+        if (!r.hasKmPhoto && (r.kmPhoto || r.photo || (Array.isArray(r.kmPhotos) && r.kmPhotos.length > 0) || (r.kmPhotos && typeof r.kmPhotos === 'object' && Object.keys(r.kmPhotos).length > 0))) {
           r.hasKmPhoto = true;
         }
-        delete r.kmPhoto;
-        delete r.kmPhotos;
-        delete r.photo;
-      });
-      historyEntries = records;
-      
-      // Sort descending by sequential serial ID
-      historyEntries.sort((a, b) => (parseInt(b.responseNumber) || 0) - (parseInt(a.responseNumber) || 0));
-      
-      // Save lightweight entries to fast localStorage cache
+
+        // Clean image payloads to free memory
+        r.receiptPhoto = null;
+        r.receiptPhotos = null;
+        r.capturedPhoto = null;
+        r.stationPhoto = null;
+        r.kmPhoto = null;
+        r.kmPhotos = null;
+        r.photo = null;
+
+        // Pre-parse numeric response number for 100x faster sorts
+        r._respNum = Number(r.responseNumber) || (i + 1);
+
+        // Pre-parse timestamp for instant date filtering
+        let pTime = 0;
+        if (r.timestamp && typeof r.timestamp === 'number') {
+          pTime = r.timestamp;
+        } else if (r.date) {
+          const parsed = parseDateStr(r.date);
+          pTime = parsed ? parsed.getTime() : 0;
+        }
+        r._time = pTime;
+
+        // Urea identification in same pass
+        const isUrea = containsUreaOrUriya(r.fromLocation) || 
+                       containsUreaOrUriya(r.lastLocation) ||
+                       containsUreaOrUriya(r.vendorName) ||
+                       containsUreaOrUriya(r.note);
+        r.isUrea = isUrea;
+        if (isUrea) cleanUrea.push(r);
+
+        // Collect unique filter options in the same single loop
+        if (r.vehicleNo) uniqueVehSet.add(r.vehicleNo.trim());
+        if (r.vehicleType) uniqueVTypeSet.add(r.vehicleType.trim());
+        if (r.vendorName) uniqueVendSet.add(r.vendorName.trim());
+        if (r.fromLocation) uniqueFromLocSet.add(r.fromLocation.trim());
+        if (r.lastLocation) uniqueToLocSet.add(r.lastLocation.trim());
+
+        cleanEntries.push(r);
+      }
+
+      // Fast numeric sort (direct arithmetic)
+      cleanEntries.sort((a, b) => b._respNum - a._respNum);
+
+      historyEntries = cleanEntries;
+      ureaEntriesList = cleanUrea;
+      window._cachedFilterOptions = {
+        vehicles: [...uniqueVehSet].sort(),
+        vehicleTypes: [...uniqueVTypeSet].sort(),
+        vendors: [...uniqueVendSet].sort(),
+        fromLocations: [...uniqueFromLocSet].sort(),
+        toLocations: [...uniqueToLocSet].sort()
+      };
+
+      // Save lightweight entries to fast localStorage cache (sliced automatically)
       saveCache('rpm_cache_entries', historyEntries);
+      saveCache('rpm_cache_urea_entries', ureaEntriesList);
 
       // Sync datalists with newly loaded values
       syncVehicleList();
     } else {
       historyEntries = [];
+      ureaEntriesList = [];
       saveCache('rpm_cache_entries', []);
+      saveCache('rpm_cache_urea_entries', []);
     }
     
     isEntriesLoading = false;
-
-    ureaEntriesList = historyEntries.filter(e => {
-      return containsUreaOrUriya(e.fromLocation) || 
-             containsUreaOrUriya(e.lastLocation) ||
-             containsUreaOrUriya(e.vendorName) ||
-             containsUreaOrUriya(e.note);
-    });
-    saveCache('rpm_cache_urea_entries', ureaEntriesList);
     isUreaEntriesLoading = false;
     
     // Refresh visible grids
@@ -2250,107 +2303,115 @@ function renderDashboardStats() {
   const todayMonth = istDate.getMonth();
   const todayDay = istDate.getDate();
 
-  // Populate dropdown options dynamically so they stay in sync
-  populateDashboardFilterDropdowns();
+  const istTodayStart = new Date(todayYear, todayMonth, todayDay).getTime();
+  const istTodayEnd = istTodayStart + 86400000;
 
   // Retrieve the filtered entries
   const filtered = getFilteredEntries();
-
-  // 1. Calculations
   const totalRecords = filtered.length;
-  
-  // Unique dates and active days
-  const uniqueDates = [...new Set(filtered.map(e => e.date).filter(Boolean))];
-  const activeDays = uniqueDates.length;
 
-  // Total Spend & Fills & Litres
-  const totalSpend = filtered.reduce((sum, e) => sum + (parseFloat(e.dieselAmount) || 0), 0);
-  const totalLitres = filtered.reduce((sum, e) => {
-    const l = parseFloat(e.litres);
-    if (!isNaN(l) && l > 0) return sum + l;
-    const cost = parseFloat(e.dieselAmount) || 0;
-    const rate = parseFloat(dieselRate) || 98.17;
-    return sum + (cost > 0 && rate > 0 ? (cost / rate) : 0);
-  }, 0);
+  // Pre-compiled sets for today's spend checklist matching
+  const hasVehicleTypeFilter = dashFilters.vehicleType && !dashFilters.vehicleType.includes('All');
+  const vehicleTypeSet = hasVehicleTypeFilter ? new Set(dashFilters.vehicleType) : null;
 
-  // Today's Spend (matches local today)
-  const todaySpend = historyEntries
-    .filter(e => {
-      const entryDate = parseDateStr(e.date);
-      if (!entryDate) return false;
-      entryDate.setHours(0,0,0,0);
-      const istToday = new Date(todayYear, todayMonth, todayDay);
-      if (entryDate.getTime() !== istToday.getTime()) return false;
-      
-      // Apply same select filters to today's spend card
+  const hasVehicleNoFilter = dashFilters.vehicleNo && !dashFilters.vehicleNo.includes('All');
+  const vehicleNoSet = hasVehicleNoFilter ? new Set(dashFilters.vehicleNo) : null;
 
-      if (!matchChecklist(e.vehicleType, dashFilters.vehicleType)) return false;
-      if (!matchChecklist(e.vehicleNo, dashFilters.vehicleNo)) return false;
-      if (!matchChecklist(e.vendorName, dashFilters.vendor)) return false;
-      if (!matchChecklist(e.fromLocation, dashFilters.fromLocation)) return false;
-      if (!matchChecklist(e.lastLocation, dashFilters.toLocation)) return false;
-      
-      return true;
-    })
-    .reduce((sum, e) => sum + (parseFloat(e.dieselAmount) || 0), 0);
+  const hasVendorFilter = dashFilters.vendor && !dashFilters.vendor.includes('All');
+  const vendorSet = hasVendorFilter ? new Set(dashFilters.vendor) : null;
 
-  // Median Fill
-  const fillAmounts = filtered.map(e => parseFloat(e.dieselAmount) || 0).sort((a, b) => a - b);
-  let medianFill = 0;
-  if (fillAmounts.length > 0) {
-    const mid = Math.floor(fillAmounts.length / 2);
-    if (fillAmounts.length % 2 !== 0) {
-      medianFill = fillAmounts[mid];
-    } else {
-      medianFill = (fillAmounts[mid - 1] + fillAmounts[mid]) / 2;
-    }
-  }
+  const hasFromLocFilter = dashFilters.fromLocation && !dashFilters.fromLocation.includes('All');
+  const fromLocSet = hasFromLocFilter ? new Set(dashFilters.fromLocation) : null;
 
-  // Max Fill
+  const hasToLocFilter = dashFilters.toLocation && !dashFilters.toLocation.includes('All');
+  const toLocSet = hasToLocFilter ? new Set(dashFilters.toLocation) : null;
+
+  // 1. Single-pass metric calculations over filtered dataset
+  const uniqueDatesSet = new Set();
+  const uniqueVehsSet = new Set();
+  const uniqueVendsSet = new Set();
+  const vehicleSpendMap = {};
+  const fillAmounts = [];
+
+  let totalSpend = 0;
+  let totalLitres = 0;
   let maxFill = 0;
   let maxFillVehicle = 'NONE';
-  filtered.forEach(e => {
+  let minFill = totalRecords > 0 ? Infinity : 0;
+  let topVehicleNo = 'NONE';
+  let topVehicleSpend = 0;
+  const rateVal = parseFloat(dieselRate) || 98.17;
+
+  for (let i = 0; i < totalRecords; i++) {
+    const e = filtered[i];
     const amt = parseFloat(e.dieselAmount) || 0;
+    totalSpend += amt;
+
+    const l = parseFloat(e.litres);
+    if (!isNaN(l) && l > 0) {
+      totalLitres += l;
+    } else if (amt > 0 && rateVal > 0) {
+      totalLitres += (amt / rateVal);
+    }
+
+    if (e.date) uniqueDatesSet.add(e.date);
+
     if (amt > maxFill) {
       maxFill = amt;
       maxFillVehicle = e.vehicleNo || 'UNKNOWN';
     }
-  });
-
-  // Min Fill
-  let minFill = filtered.length > 0 ? Infinity : 0;
-  filtered.forEach(e => {
-    const amt = parseFloat(e.dieselAmount) || 0;
     if (amt < minFill) {
       minFill = amt;
     }
-  });
-  if (minFill === Infinity) minFill = 0;
 
-  // Fleet Size
-  const uniqueVehs = [...new Set(filtered.map(e => e.vehicleNo).filter(Boolean))];
-  const fleetSize = uniqueVehs.length;
-
-  // Vendors Count
-  const uniqueVends = [...new Set(filtered.map(e => e.vendorName).filter(Boolean))];
-  const vendorsCount = uniqueVends.length;
-
-  // Top Vehicle No & Spend
-  const vehicleSpendMap = {};
-  filtered.forEach(e => {
     if (e.vehicleNo) {
       const v = e.vehicleNo.trim().toUpperCase();
-      vehicleSpendMap[v] = (vehicleSpendMap[v] || 0) + (parseFloat(e.dieselAmount) || 0);
+      uniqueVehsSet.add(v);
+      const curSpend = (vehicleSpendMap[v] || 0) + amt;
+      vehicleSpendMap[v] = curSpend;
+      if (curSpend > topVehicleSpend) {
+        topVehicleSpend = curSpend;
+        topVehicleNo = v;
+      }
     }
-  });
-  let topVehicleNo = 'NONE';
-  let topVehicleSpend = 0;
-  Object.entries(vehicleSpendMap).forEach(([v, s]) => {
-    if (s > topVehicleSpend) {
-      topVehicleNo = v;
-      topVehicleSpend = s;
+
+    if (e.vendorName) {
+      uniqueVendsSet.add(e.vendorName);
     }
-  });
+
+    if (amt > 0) {
+      fillAmounts.push(amt);
+    }
+  }
+
+  if (minFill === Infinity) minFill = 0;
+  const activeDays = uniqueDatesSet.size;
+  const fleetSize = uniqueVehsSet.size;
+  const vendorsCount = uniqueVendsSet.size;
+
+  // Calculate today's spend efficiently
+  let todaySpend = 0;
+  for (let i = 0; i < historyEntries.length; i++) {
+    const e = historyEntries[i];
+    if (!e) continue;
+    const eTime = e._time || (e.date ? (parseDateStr(e.date)?.getTime() || 0) : 0);
+    if (eTime >= istTodayStart && eTime < istTodayEnd) {
+      if (vehicleTypeSet && (!e.vehicleType || !vehicleTypeSet.has(e.vehicleType))) continue;
+      if (vehicleNoSet && (!e.vehicleNo || !vehicleNoSet.has(e.vehicleNo))) continue;
+      if (vendorSet && (!e.vendorName || !vendorSet.has(e.vendorName))) continue;
+      if (fromLocSet && (!e.fromLocation || !fromLocSet.has(e.fromLocation))) continue;
+      if (toLocSet && (!e.lastLocation || !toLocSet.has(e.lastLocation))) continue;
+      todaySpend += (parseFloat(e.dieselAmount) || 0);
+    }
+  }
+
+  // Median Fill
+  let medianFill = 0;
+  if (fillAmounts.length > 0) {
+    fillAmounts.sort((a, b) => a - b);
+    const mid = Math.floor(fillAmounts.length / 2);
+    medianFill = (fillAmounts.length % 2 !== 0) ? fillAmounts[mid] : (fillAmounts[mid - 1] + fillAmounts[mid]) / 2;
+  }
 
   // 2. Render Card DOM Elements
   const elTotalRecords = document.getElementById('dash-total-records');
@@ -2510,58 +2571,64 @@ function renderDashboardStats() {
 
 // Get list of entries filtered by the active dashboard filters
 function getFilteredEntries() {
-  const todayObj = new Date();
-  const todayISTStr = todayObj.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' });
-  const todayIST = new Date(todayISTStr);
-  const todayY = todayIST.getFullYear();
-  const todayM = todayIST.getMonth();
-  const todayD = todayIST.getDate();
-
   let fromDateObj = dashFilters.dateFrom ? parseDateStr(dashFilters.dateFrom) : null;
   let toDateObj = dashFilters.dateTo ? parseDateStr(dashFilters.dateTo) : null;
   
-  if (fromDateObj) {
-    fromDateObj.setHours(0, 0, 0, 0);
-  }
-  if (toDateObj) {
-    toDateObj.setHours(23, 59, 59, 999);
-  }
+  if (fromDateObj) fromDateObj.setHours(0, 0, 0, 0);
+  if (toDateObj) toDateObj.setHours(23, 59, 59, 999);
 
-  return historyEntries.filter(e => {
-    // Date range filter
-    const entryDate = parseDateStr(e.date);
-    if (entryDate) {
-      entryDate.setHours(0, 0, 0, 0);
-      if (fromDateObj && entryDate < fromDateObj) return false;
-      if (toDateObj && entryDate > toDateObj) return false;
+  const fromTime = fromDateObj ? fromDateObj.getTime() : null;
+  const toTime = toDateObj ? toDateObj.getTime() : null;
+
+  const hasVehicleTypeFilter = dashFilters.vehicleType && !dashFilters.vehicleType.includes('All');
+  const vehicleTypeSet = hasVehicleTypeFilter ? new Set(dashFilters.vehicleType) : null;
+
+  const hasVehicleNoFilter = dashFilters.vehicleNo && !dashFilters.vehicleNo.includes('All');
+  const vehicleNoSet = hasVehicleNoFilter ? new Set(dashFilters.vehicleNo) : null;
+
+  const hasVendorFilter = dashFilters.vendor && !dashFilters.vendor.includes('All');
+  const vendorSet = hasVendorFilter ? new Set(dashFilters.vendor) : null;
+
+  const hasFromLocFilter = dashFilters.fromLocation && !dashFilters.fromLocation.includes('All');
+  const fromLocSet = hasFromLocFilter ? new Set(dashFilters.fromLocation) : null;
+
+  const hasToLocFilter = dashFilters.toLocation && !dashFilters.toLocation.includes('All');
+  const toLocSet = hasToLocFilter ? new Set(dashFilters.toLocation) : null;
+
+  const minAmt = parseFloat(dashFilters.minAmount) || 0;
+  const hasMaxAmt = dashFilters.maxAmount !== null && dashFilters.maxAmount !== '';
+  const maxAmt = hasMaxAmt ? parseFloat(dashFilters.maxAmount) : Infinity;
+
+  const totalLen = historyEntries.length;
+  const result = [];
+
+  for (let i = 0; i < totalLen; i++) {
+    const e = historyEntries[i];
+    if (!e) continue;
+
+    // Fast date comparison using pre-computed _time
+    if (fromTime !== null || toTime !== null) {
+      const entryTime = e._time || (e.date ? (parseDateStr(e.date)?.getTime() || 0) : 0);
+      if (fromTime !== null && entryTime < fromTime) continue;
+      if (toTime !== null && entryTime > toTime) continue;
     }
 
+    if (vehicleTypeSet && (!e.vehicleType || !vehicleTypeSet.has(e.vehicleType))) continue;
+    if (vehicleNoSet && (!e.vehicleNo || !vehicleNoSet.has(e.vehicleNo))) continue;
+    if (vendorSet && (!e.vendorName || !vendorSet.has(e.vendorName))) continue;
+    if (fromLocSet && (!e.fromLocation || !fromLocSet.has(e.fromLocation))) continue;
+    if (toLocSet && (!e.lastLocation || !toLocSet.has(e.lastLocation))) continue;
 
-
-    // Vehicle Type filter
-    if (!matchChecklist(e.vehicleType, dashFilters.vehicleType)) return false;
-
-    // Vehicle No filter
-    if (!matchChecklist(e.vehicleNo, dashFilters.vehicleNo)) return false;
-
-    // Vendor filter
-    if (!matchChecklist(e.vendorName, dashFilters.vendor)) return false;
-
-    // From Location filter
-    if (!matchChecklist(e.fromLocation, dashFilters.fromLocation)) return false;
-
-    // To Location filter
-    if (!matchChecklist(e.lastLocation, dashFilters.toLocation)) return false;
-
-    // Amount filters
-    const costVal = parseFloat(e.dieselAmount) || 0;
-    if (parseFloat(dashFilters.minAmount) > 0 && costVal < parseFloat(dashFilters.minAmount)) return false;
-    if (dashFilters.maxAmount !== null && dashFilters.maxAmount !== '') {
-      if (costVal > parseFloat(dashFilters.maxAmount)) return false;
+    if (minAmt > 0 || hasMaxAmt) {
+      const costVal = parseFloat(e.dieselAmount) || 0;
+      if (minAmt > 0 && costVal < minAmt) continue;
+      if (hasMaxAmt && costVal > maxAmt) continue;
     }
 
-    return true;
-  });
+    result.push(e);
+  }
+
+  return result;
 }
 
 // Populate filter dropdown selections
@@ -2733,8 +2800,10 @@ function populateDashboardFilterDropdowns() {
     }
   }
 
+  const cachedOpts = window._cachedFilterOptions || {};
+
   // 1. Vehicle Types
-  const types = [...new Set(historyEntries.map(e => e.vehicleType).filter(Boolean))];
+  const types = cachedOpts.vehicleTypes ? [...cachedOpts.vehicleTypes] : [...new Set(historyEntries.map(e => e.vehicleType).filter(Boolean))];
   vehicleTypesList.forEach(vt => {
     if (vt.name && !types.includes(vt.name)) types.push(vt.name);
   });
@@ -2749,7 +2818,7 @@ function populateDashboardFilterDropdowns() {
   });
 
   // 2. Vehicle Numbers
-  const uniqueVehs = [...new Set(historyEntries.map(e => e.vehicleNo).filter(Boolean))].sort();
+  const uniqueVehs = cachedOpts.vehicles ? cachedOpts.vehicles : [...new Set(historyEntries.map(e => e.vehicleNo).filter(Boolean))].sort();
   setupMultiSelectChecklist({
     menuId: 'dash-filter-vehicle-no-list',
     selectAllId: 'dash-filter-vehicle-no-select-all',
@@ -2760,7 +2829,7 @@ function populateDashboardFilterDropdowns() {
   });
 
   // 3. Vendors Multi-Select Checklist
-  const vendors = [...new Set(historyEntries.map(e => e.vendorName).filter(Boolean))];
+  const vendors = cachedOpts.vendors ? [...cachedOpts.vendors] : [...new Set(historyEntries.map(e => e.vendorName).filter(Boolean))];
   vendorsList.forEach(v => {
     const name = v.name || v;
     if (name && !vendors.includes(name)) vendors.push(name);
@@ -2817,11 +2886,18 @@ function populateDashboardFilterDropdowns() {
   }
 
   // 4. Locations
-  const locations = [...new Set([
-    ...historyEntries.map(e => e.fromLocation).filter(Boolean),
-    ...historyEntries.map(e => e.lastLocation).filter(Boolean),
-    ...locationsList.map(l => l.name).filter(Boolean)
-  ])].sort();
+  let locations;
+  if (cachedOpts.fromLocations && cachedOpts.toLocations) {
+    const locSet = new Set([...cachedOpts.fromLocations, ...cachedOpts.toLocations]);
+    locationsList.forEach(l => { if (l && l.name) locSet.add(l.name); });
+    locations = [...locSet].sort();
+  } else {
+    locations = [...new Set([
+      ...historyEntries.map(e => e.fromLocation).filter(Boolean),
+      ...historyEntries.map(e => e.lastLocation).filter(Boolean),
+      ...locationsList.map(l => l.name).filter(Boolean)
+    ])].sort();
+  }
 
   setupMultiSelectChecklist({
     menuId: 'dash-filter-from-location-list',
@@ -3752,7 +3828,9 @@ function syncVehicleList() {
   const list = document.getElementById('drf-vehicle-list');
   const calcList = document.getElementById('calc-vehicle-list');
   
-  const uniqueVehicles = [...new Set(historyEntries.map(e => e.vehicleNo).filter(Boolean))].sort();
+  const uniqueVehicles = (window._cachedFilterOptions && window._cachedFilterOptions.vehicles)
+    ? window._cachedFilterOptions.vehicles
+    : [...new Set(historyEntries.map(e => e.vehicleNo).filter(Boolean))].sort();
 
   const handleVehicleInput = (inputEl, listEl) => {
     if (!inputEl || !listEl) return;
@@ -8650,7 +8728,8 @@ window.executeDashboardExcelExport = function() {
 };
 
 function getFilteredHistoryEntries() {
-  const searchQuery = document.getElementById('history-search')?.value.toLowerCase() || '';
+  const searchInput = document.getElementById('history-search');
+  const searchQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
   const vendorVal = document.getElementById('history-vendor-filter')?.value || 'All';
   
   const fromDateObj = dashFilters.dateFrom ? parseDateStr(dashFilters.dateFrom) : null;
@@ -8658,50 +8737,69 @@ function getFilteredHistoryEntries() {
   if (fromDateObj) fromDateObj.setHours(0, 0, 0, 0);
   if (toDateObj) toDateObj.setHours(23, 59, 59, 999);
 
-  return historyEntries.filter(e => {
-    // 1. Local Search Query
-    const dataStr = `${e.responseNumber} ${e.date} ${e.vehicleNo} ${e.vehicleType} ${e.fromLocation} ${e.lastLocation} ${e.vendorName} ${e.note}`.toLowerCase();
-    if (searchQuery && !dataStr.includes(searchQuery)) return false;
+  const fromTime = fromDateObj ? fromDateObj.getTime() : null;
+  const toTime = toDateObj ? toDateObj.getTime() : null;
+
+  const hasVehicleTypeFilter = dashFilters.vehicleType && !dashFilters.vehicleType.includes('All');
+  const vehicleTypeSet = hasVehicleTypeFilter ? new Set(dashFilters.vehicleType) : null;
+
+  const hasVehicleNoFilter = dashFilters.vehicleNo && !dashFilters.vehicleNo.includes('All');
+  const vehicleNoSet = hasVehicleNoFilter ? new Set(dashFilters.vehicleNo) : null;
+
+  const hasVendorFilter = dashFilters.vendor && !dashFilters.vendor.includes('All');
+  const vendorSet = hasVendorFilter ? new Set(dashFilters.vendor) : null;
+
+  const hasFromLocFilter = dashFilters.fromLocation && !dashFilters.fromLocation.includes('All');
+  const fromLocSet = hasFromLocFilter ? new Set(dashFilters.fromLocation) : null;
+
+  const hasToLocFilter = dashFilters.toLocation && !dashFilters.toLocation.includes('All');
+  const toLocSet = hasToLocFilter ? new Set(dashFilters.toLocation) : null;
+
+  const minAmt = parseFloat(dashFilters.minAmount) || 0;
+  const hasMaxAmt = dashFilters.maxAmount !== null && dashFilters.maxAmount !== '';
+  const maxAmt = hasMaxAmt ? parseFloat(dashFilters.maxAmount) : Infinity;
+
+  const totalLen = historyEntries.length;
+  const result = [];
+
+  for (let i = 0; i < totalLen; i++) {
+    const e = historyEntries[i];
+    if (!e) continue;
+
+    // 1. Local Search Query (Only compute string if query is entered)
+    if (searchQuery) {
+      const dataStr = `${e.responseNumber || ''} ${e.date || ''} ${e.vehicleNo || ''} ${e.vehicleType || ''} ${e.fromLocation || ''} ${e.lastLocation || ''} ${e.vendorName || ''} ${e.note || ''}`.toLowerCase();
+      if (!dataStr.includes(searchQuery)) continue;
+    }
     
     // 2. Local Vendor Dropdown Filter
-    if (vendorVal !== 'All' && e.vendorName !== vendorVal) return false;
+    if (vendorVal !== 'All' && e.vendorName !== vendorVal) continue;
 
-
-
-    // 3. Global Date Range Filter
-    const entryDate = parseDateStr(e.date);
-    if (entryDate) {
-      entryDate.setHours(0, 0, 0, 0);
-      if (fromDateObj && entryDate < fromDateObj) return false;
-      if (toDateObj && entryDate > toDateObj) return false;
-    } else {
-      if (fromDateObj || toDateObj) return false;
+    // 3. Global Date Range Filter using pre-computed _time
+    if (fromTime !== null || toTime !== null) {
+      const entryTime = e._time || (e.date ? (parseDateStr(e.date)?.getTime() || 0) : 0);
+      if (fromTime !== null && entryTime < fromTime) continue;
+      if (toTime !== null && entryTime > toTime) continue;
     }
 
-    // 4. Global Vehicle Type Filter
-    if (!matchChecklist(e.vehicleType, dashFilters.vehicleType)) return false;
+    // 4. Fast Set Lookups
+    if (vehicleTypeSet && (!e.vehicleType || !vehicleTypeSet.has(e.vehicleType))) continue;
+    if (vehicleNoSet && (!e.vehicleNo || !vehicleNoSet.has(e.vehicleNo))) continue;
+    if (vendorSet && (!e.vendorName || !vendorSet.has(e.vendorName))) continue;
+    if (fromLocSet && (!e.fromLocation || !fromLocSet.has(e.fromLocation))) continue;
+    if (toLocSet && (!e.lastLocation || !toLocSet.has(e.lastLocation))) continue;
 
-    // 5. Global Vehicle No Filter
-    if (!matchChecklist(e.vehicleNo, dashFilters.vehicleNo)) return false;
-
-    // 6. Global Vendor Checklist Filter
-    if (!matchChecklist(e.vendorName, dashFilters.vendor)) return false;
-
-    // 7. Global From Location Filter
-    if (!matchChecklist(e.fromLocation, dashFilters.fromLocation)) return false;
-
-    // 8. Global To Location Filter
-    if (!matchChecklist(e.lastLocation, dashFilters.toLocation)) return false;
-
-    // 9. Global Amount Filters
-    const costVal = parseFloat(e.dieselAmount) || 0;
-    if (parseFloat(dashFilters.minAmount) > 0 && costVal < parseFloat(dashFilters.minAmount)) return false;
-    if (dashFilters.maxAmount !== null && dashFilters.maxAmount !== '') {
-      if (costVal > parseFloat(dashFilters.maxAmount)) return false;
+    // 5. Amount Filters
+    if (minAmt > 0 || hasMaxAmt) {
+      const costVal = parseFloat(e.dieselAmount) || 0;
+      if (minAmt > 0 && costVal < minAmt) continue;
+      if (hasMaxAmt && costVal > maxAmt) continue;
     }
 
-    return true;
-  });
+    result.push(e);
+  }
+
+  return result;
 }
 
 function exportEntriesToExcel(entries, filename, skipDateSuffix = false) {
@@ -13786,7 +13884,8 @@ function isEntryExcluded(e) {
 window.isEntryExcluded = isEntryExcluded;
 window.getEntryUniqueKey = getEntryUniqueKey;
 
-// Robust Date string parsing helper
+// High-performance Date string parsing with fast cache
+const _dateStrParseCache = new Map();
 function parseDateStr(str) {
   if (!str) return null;
   
@@ -13796,8 +13895,14 @@ function parseDateStr(str) {
     return isNaN(d) ? null : d;
   }
 
-  str = String(str).trim();
-  const cleanStr = str.split(/[\s,T]+/)[0].trim();
+  const strKey = String(str).trim();
+  if (_dateStrParseCache.has(strKey)) {
+    const cachedTime = _dateStrParseCache.get(strKey);
+    return cachedTime !== null ? new Date(cachedTime) : null;
+  }
+
+  const cleanStr = strKey.split(/[\s,T]+/)[0].trim();
+  let resultDate = null;
 
   // 1. Match YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD first
   const ymdMatch = cleanStr.match(/^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})$/);
@@ -13805,29 +13910,36 @@ function parseDateStr(str) {
     const yy = parseInt(ymdMatch[1]);
     const mm = parseInt(ymdMatch[2]) - 1;
     const dd = parseInt(ymdMatch[3]);
-    return new Date(yy, mm, dd);
-  }
-
-  // 2. Match DD-MM-YYYY / DD/MM/YYYY / DD.MM.YYYY
-  const match = cleanStr.match(/^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{2,4})$/);
-  if (match) {
-    const dd = parseInt(match[1]);
-    const mm = parseInt(match[2]) - 1;
-    let yy = parseInt(match[3]);
-    if (yy < 100) {
-      yy += (yy < 50 ? 2000 : 1900);
+    resultDate = new Date(yy, mm, dd);
+  } else {
+    // 2. Match DD-MM-YYYY / DD/MM/YYYY / DD.MM.YYYY
+    const match = cleanStr.match(/^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{2,4})$/);
+    if (match) {
+      const dd = parseInt(match[1]);
+      const mm = parseInt(match[2]) - 1;
+      let yy = parseInt(match[3]);
+      if (yy < 100) {
+        yy += (yy < 50 ? 2000 : 1900);
+      }
+      resultDate = new Date(yy, mm, dd);
+    } else {
+      // Default browser fallback
+      const d = new Date(strKey);
+      resultDate = isNaN(d) ? null : d;
     }
-    return new Date(yy, mm, dd);
   }
 
-  // Default browser fallback
-  const d = new Date(str);
-  return isNaN(d) ? null : d;
+  const validTime = (resultDate && !isNaN(resultDate.getTime())) ? resultDate.getTime() : null;
+  if (_dateStrParseCache.size > 2000) _dateStrParseCache.clear();
+  _dateStrParseCache.set(strKey, validTime);
+
+  return validTime !== null ? new Date(validTime) : null;
 }
 
 // Convert date and optional time into Milliseconds since epoch
 function parseDateAndTimeToMs(e) {
   if (!e || !e.date) return 0;
+  if (e._exactMs !== undefined) return e._exactMs;
   const dt = parseDateStr(e.date);
   if (!dt) return 0;
 
@@ -13844,7 +13956,9 @@ function parseDateAndTimeToMs(e) {
       dt.setHours(hrs, mins, 0, 0);
     }
   }
-  return dt.getTime();
+  const exactTime = dt.getTime();
+  e._exactMs = exactTime;
+  return exactTime;
 }
 
 // Auto-resolve mileage from history or config when vehicle changes
@@ -24777,7 +24891,7 @@ driverRequestsRef.on('value', snapshot => {
   }
 
   // 2. Immediate reconnection on tab state changes, focus, resume, and network online events
-  const events = ['visibilitychange', 'focus', 'online', 'pageshow', 'mousemove', 'touchstart'];
+  const events = ['visibilitychange', 'focus', 'online', 'pageshow'];
   events.forEach(evtName => {
     window.addEventListener(evtName, () => {
       triggerKeepAlive();

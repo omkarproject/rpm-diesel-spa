@@ -14,10 +14,9 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-.card-hover, button, input, select, modal, #notification-dropdown {
+.card-hover, modal, #notification-dropdown, .hover-lift {
   transform: translateZ(0);
   backface-visibility: hidden;
-  perspective: 1000px;
 }
 
 :root {
