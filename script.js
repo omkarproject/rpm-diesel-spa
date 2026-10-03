@@ -8397,6 +8397,7 @@ window.exportDieselInEntryExcel = () => {
     }
 
     return {
+      'Di_PurchaseName*': 'MANOR AUTO SERVICE',
       'Die_VehicleNo*': e.vehicleNo || '',
       'Die_BillNo*': e.responseNumber || '',
       'Die_Date': e.date || '',
@@ -8411,7 +8412,7 @@ window.exportDieselInEntryExcel = () => {
       'Die_ReadingKM': kmValue,
       'Diesel Out': 'YES',
       'Remark': remark,
-      'Card Name': 'MANOR AUTO SERVICE',
+      'Card Name': '',
       'Carting Agent': String(e.vendorName || '').replace(/[\s\u00A0]+/g, ' ').trim()
     };
   });
