@@ -8495,8 +8495,13 @@ window.exportDieselInEntryExcel = async () => {
     const formattedDate = formatToDDMMYYYY(e.date);
     const dateSerial = getExcelDateSerial(e.date);
 
+    const cleanVehicleNo = String(e.vehicleNo || '')
+      .replace(/[\u200B-\u200D\uFEFF\u00A0\s]+/g, '')
+      .toUpperCase()
+      .trim();
+
     ws['A' + r] = { t: 's', v: 'MANOR AUTO SERVICE' };
-    ws['B' + r] = { t: 's', v: String(e.vehicleNo || '').trim() };
+    ws['B' + r] = { t: 's', v: cleanVehicleNo };
     ws['C' + r] = { t: 'n', v: parseInt(e.responseNumber) || 0 };
     ws['D' + r] = dateSerial 
       ? { t: 'n', v: dateSerial, z: 'dd\\/mm\\/yyyy', w: formattedDate, s: { numFmt: 'dd/mm/yyyy' } }
