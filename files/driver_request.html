@@ -3600,6 +3600,19 @@
       }
     });
 
+    // Live listener for Due Display Limits
+    let dueDisplayLimits = { maxDue: 2000, maxDeficit: 500 };
+    db.ref('config/due_display_limits').on('value', snapshot => {
+      const val = snapshot.val();
+      if (val) {
+        dueDisplayLimits.maxDue = (val.maxDue !== undefined && !isNaN(val.maxDue) && val.maxDue !== '') ? Number(val.maxDue) : 2000;
+        dueDisplayLimits.maxDeficit = (val.maxDeficit !== undefined && !isNaN(val.maxDeficit) && val.maxDeficit !== '') ? Math.abs(Number(val.maxDeficit)) : 500;
+      }
+      if (typeof updateMonthlyDueDisplay === 'function') {
+        updateMonthlyDueDisplay();
+      }
+    });
+
     function isVendorDuePermitted(vendorName) {
       if (!vendorName) return false;
       const vName = String(vendorName).trim().toUpperCase();
@@ -3627,6 +3640,13 @@ function showDueBreakdownModal() {
     currentVendor = vehicleAutofillMap[vehicle].vendorName;
   }
   if (!isVendorDuePermitted(currentVendor)) return;
+
+  const maxDueLimit = (dueDisplayLimits && !isNaN(dueDisplayLimits.maxDue)) ? Number(dueDisplayLimits.maxDue) : 2000;
+  const maxDeficitLimit = (dueDisplayLimits && !isNaN(dueDisplayLimits.maxDeficit)) ? Math.abs(Number(dueDisplayLimits.maxDeficit)) : 500;
+  const chkDue = calculateMonthlyTotal(vehicle);
+  if (chkDue !== null && !isNaN(chkDue) && (chkDue > maxDueLimit || chkDue < -maxDeficitLimit)) {
+    return;
+  }
 
   const details = getVehicleMonthlyDueDetails(vehicle, km, vtype);
   if (!details) return;
@@ -3698,8 +3718,11 @@ function closeDueBreakdownModal() {
           return;
         }
 
-        // Hide if due > 2000 or deficit/overdue exceeds 500
-        if (dueVal > 2000 || dueVal < -500) {
+        const maxDue = (dueDisplayLimits && !isNaN(dueDisplayLimits.maxDue)) ? Number(dueDisplayLimits.maxDue) : 2000;
+        const maxDeficit = (dueDisplayLimits && !isNaN(dueDisplayLimits.maxDeficit)) ? Math.abs(Number(dueDisplayLimits.maxDeficit)) : 500;
+
+        // Hide if due exceeds maxDue or deficit exceeds maxDeficit (dueVal < -maxDeficit)
+        if (dueVal > maxDue || dueVal < -maxDeficit) {
           badge.classList.add('hidden');
           return;
         }

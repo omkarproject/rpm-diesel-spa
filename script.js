@@ -23714,19 +23714,35 @@ let vendorKmPhotoPermissions = {};
 const vendorDuePermissionsRef = db.ref('config/vendor_due_permissions');
 let vendorDuePermissions = {};
 
-let currentVendorPermTab = 'km'; // 'km' or 'due'
+const dueDisplayLimitsRef = db.ref('config/due_display_limits');
+let dueDisplayLimits = { maxDue: 2000, maxDeficit: 500 };
+
+let currentVendorPermTab = 'km'; // 'km', 'due', or 'limits'
 
 vendorKmPhotoPermissionsRef.on('value', snapshot => {
   vendorKmPhotoPermissions = snapshot.val() || {};
   if (document.getElementById('vendor-km-permission-modal') && !document.getElementById('vendor-km-permission-modal').classList.contains('hidden')) {
-    renderVendorKmPermissionList();
+    if (currentVendorPermTab === 'km') renderVendorKmPermissionList();
   }
 });
 
 vendorDuePermissionsRef.on('value', snapshot => {
   vendorDuePermissions = snapshot.val() || {};
   if (document.getElementById('vendor-km-permission-modal') && !document.getElementById('vendor-km-permission-modal').classList.contains('hidden')) {
-    renderVendorKmPermissionList();
+    if (currentVendorPermTab === 'due') renderVendorKmPermissionList();
+  }
+});
+
+dueDisplayLimitsRef.on('value', snapshot => {
+  const data = snapshot.val();
+  if (data) {
+    dueDisplayLimits.maxDue = (data.maxDue !== undefined && !isNaN(data.maxDue) && data.maxDue !== '') ? Number(data.maxDue) : 2000;
+    dueDisplayLimits.maxDeficit = (data.maxDeficit !== undefined && !isNaN(data.maxDeficit) && data.maxDeficit !== '') ? Math.abs(Number(data.maxDeficit)) : 500;
+  }
+  if (document.getElementById('vendor-km-permission-modal') && !document.getElementById('vendor-km-permission-modal').classList.contains('hidden')) {
+    if (currentVendorPermTab === 'limits') {
+      populateDueLimitsForm();
+    }
   }
 });
 
@@ -23734,31 +23750,104 @@ window.switchVendorPermissionTab = function(tab) {
   currentVendorPermTab = tab;
   const btnKm = document.getElementById('tab-btn-perm-km');
   const btnDue = document.getElementById('tab-btn-perm-due');
+  const btnLimits = document.getElementById('tab-btn-perm-limits');
   const descEl = document.getElementById('vendor-km-perm-desc');
+  const searchBox = document.getElementById('vendor-km-perm-search-box');
+  const listEl = document.getElementById('vendor-km-perm-list');
+  const limitsContainer = document.getElementById('vendor-due-limits-container');
 
-  if (tab === 'km') {
-    if (btnKm) {
-      btnKm.className = "flex-1 pb-2.5 text-xs font-black text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400 flex items-center justify-center gap-1.5 transition-all";
-    }
-    if (btnDue) {
-      btnDue.className = "flex-1 pb-2.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition-all";
-    }
-    if (descEl) {
-      descEl.textContent = "Select which vendors require drivers to take an odometer (KM) photo before submitting the driver request form.";
-    }
+  const activeBtnClass = "flex-1 pb-2.5 text-xs font-black text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400 flex items-center justify-center gap-1.5 transition-all";
+  const inactiveBtnClass = "flex-1 pb-2.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition-all";
+
+  if (btnKm) btnKm.className = (tab === 'km') ? activeBtnClass : inactiveBtnClass;
+  if (btnDue) btnDue.className = (tab === 'due') ? activeBtnClass : inactiveBtnClass;
+  if (btnLimits) btnLimits.className = (tab === 'limits') ? activeBtnClass : inactiveBtnClass;
+
+  if (tab === 'limits') {
+    if (searchBox) searchBox.classList.add('hidden');
+    if (descEl) descEl.classList.add('hidden');
+    if (listEl) listEl.classList.add('hidden');
+    if (limitsContainer) limitsContainer.classList.remove('hidden');
+    populateDueLimitsForm();
   } else {
-    if (btnKm) {
-      btnKm.className = "flex-1 pb-2.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition-all";
+    if (searchBox) searchBox.classList.remove('hidden');
+    if (descEl) descEl.classList.remove('hidden');
+    if (listEl) listEl.classList.remove('hidden');
+    if (limitsContainer) limitsContainer.classList.add('hidden');
+
+    if (tab === 'km') {
+      if (descEl) descEl.textContent = "Select which vendors require drivers to take an odometer (KM) photo before submitting the driver request form.";
+    } else {
+      if (descEl) descEl.textContent = "Select which vendors display the Monthly Due / Deficit amount on the driver request form.";
     }
-    if (btnDue) {
-      btnDue.className = "flex-1 pb-2.5 text-xs font-black text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400 flex items-center justify-center gap-1.5 transition-all";
-    }
-    if (descEl) {
-      descEl.textContent = "Select which vendors display the Monthly Due / Deficit amount on the driver request form.";
-    }
+    renderVendorKmPermissionList();
+  }
+};
+
+window.populateDueLimitsForm = function() {
+  const maxDueInput = document.getElementById('due-limit-max-due');
+  const maxDeficitInput = document.getElementById('due-limit-max-deficit');
+  if (maxDueInput) maxDueInput.value = (dueDisplayLimits.maxDue !== undefined) ? dueDisplayLimits.maxDue : 2000;
+  if (maxDeficitInput) maxDeficitInput.value = (dueDisplayLimits.maxDeficit !== undefined) ? dueDisplayLimits.maxDeficit : 500;
+  updateDueLimitsPreview();
+};
+
+window.updateDueLimitsPreview = function() {
+  const maxDueInput = document.getElementById('due-limit-max-due');
+  const maxDeficitInput = document.getElementById('due-limit-max-deficit');
+  const prevMin = document.getElementById('preview-min-due');
+  const prevMax = document.getElementById('preview-max-due');
+
+  const maxDue = (maxDueInput && maxDueInput.value !== '' && !isNaN(maxDueInput.value)) ? Math.round(Number(maxDueInput.value)) : 2000;
+  const maxDeficit = (maxDeficitInput && maxDeficitInput.value !== '' && !isNaN(maxDeficitInput.value)) ? Math.round(Math.abs(Number(maxDeficitInput.value))) : 500;
+
+  if (prevMin) prevMin.textContent = `-₹${maxDeficit.toLocaleString('en-IN')}`;
+  if (prevMax) prevMax.textContent = `+₹${maxDue.toLocaleString('en-IN')}`;
+};
+
+window.saveDueDisplayLimits = function() {
+  if (typeof checkAuth === 'function' && !checkAuth()) return;
+  const maxDueInput = document.getElementById('due-limit-max-due');
+  const maxDeficitInput = document.getElementById('due-limit-max-deficit');
+
+  let maxDue = parseFloat(maxDueInput?.value);
+  if (isNaN(maxDue) || maxDue < 0) maxDue = 2000;
+
+  let maxDeficit = parseFloat(maxDeficitInput?.value);
+  if (isNaN(maxDeficit) || maxDeficit < 0) maxDeficit = 500;
+
+  const btn = document.getElementById('btn-save-due-limits');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Saving...`;
   }
 
-  renderVendorKmPermissionList();
+  const payload = {
+    maxDue: Math.round(maxDue),
+    maxDeficit: Math.round(maxDeficit),
+    updatedAt: firebase.database.ServerValue.TIMESTAMP
+  };
+
+  dueDisplayLimitsRef.update(payload)
+    .then(() => {
+      dueDisplayLimits.maxDue = payload.maxDue;
+      dueDisplayLimits.maxDeficit = payload.maxDeficit;
+      updateDueLimitsPreview();
+      if (typeof toast !== 'undefined' && toast.ok) {
+        toast.ok(`Due Limits Updated: Range -₹${payload.maxDeficit.toLocaleString('en-IN')} to +₹${payload.maxDue.toLocaleString('en-IN')}`);
+      }
+    })
+    .catch(err => {
+      if (typeof toast !== 'undefined' && toast.err) {
+        toast.err("Failed to save due limits: " + err.message);
+      }
+    })
+    .finally(() => {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fas fa-save"></i> Save Due Limits`;
+      }
+    });
 };
 
 window.openVendorKmPermissionModal = function() {
@@ -23777,6 +23866,17 @@ window.openVendorKmPermissionModal = function() {
 };
 
 window.closeVendorKmPermissionModal = function() {
+  if (currentVendorPermTab === 'limits') {
+    const maxDueInput = document.getElementById('due-limit-max-due');
+    const maxDeficitInput = document.getElementById('due-limit-max-deficit');
+    const curDue = parseFloat(maxDueInput?.value);
+    const curDeficit = parseFloat(maxDeficitInput?.value);
+    if (!isNaN(curDue) && !isNaN(curDeficit)) {
+      if (Math.round(curDue) !== dueDisplayLimits.maxDue || Math.round(curDeficit) !== dueDisplayLimits.maxDeficit) {
+        saveDueDisplayLimits();
+      }
+    }
+  }
   const modal = document.getElementById('vendor-km-permission-modal');
   const modalContent = document.getElementById('vendor-km-permission-modal-content');
   modalContent.classList.remove('scale-100');
