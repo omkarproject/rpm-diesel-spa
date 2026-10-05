@@ -6344,7 +6344,11 @@ function renderDriversGrid() {
     tr.innerHTML = `
       <td class="px-3 py-2.5">${vehicleDisplay}</td>
       <td class="px-3 py-2.5 font-bold text-slate-800 dark:text-slate-200">${d.name}</td>
-      <td class="px-3 py-2.5 font-mono">${d.mobile}</td>
+      <td class="px-3 py-2.5 font-mono">
+        <span onclick="copyDriverMobileNumber('${d.mobile}', event)" class="cursor-pointer hover:underline text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1" title="Click to copy: ${d.mobile}">
+          ${d.mobile} <i class="fas fa-copy text-[8px] opacity-60"></i>
+        </span>
+      </td>
       <td class="px-3 py-2.5 text-xs">${tagBadge}</td>
       <td class="px-3 py-2.5 text-center">
         <div class="flex justify-center gap-2">
@@ -6405,6 +6409,31 @@ window.getDriverDetailsForVehicle = function(vehicleNo) {
 window.findDriverForVehicle = function(vehicleNo) {
   const d = window.getDriverDetailsForVehicle(vehicleNo);
   return d ? d.name : null;
+};
+
+// Copy driver mobile number to clipboard helper
+window.copyDriverMobileNumber = function(mobile, event) {
+  if (event) {
+    if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+  }
+  const cleanMobile = String(mobile || '').trim();
+  if (!cleanMobile) return;
+  const copyFn = (typeof window.safeCopyToClipboard === 'function')
+    ? window.safeCopyToClipboard
+    : (text => (navigator.clipboard && navigator.clipboard.writeText) ? navigator.clipboard.writeText(text) : Promise.reject());
+
+  copyFn(cleanMobile)
+    .then(() => {
+      if (typeof toast !== 'undefined' && toast.ok) {
+        toast.ok(`Mobile number copied: ${cleanMobile}`);
+      }
+    })
+    .catch(() => {
+      try {
+        prompt("Copy mobile number:", cleanMobile);
+      } catch (e) {}
+    });
 };
 
 window.updateVehicleDriverBadge = function(inputEl, badgeEl, nameEl) {
@@ -21591,8 +21620,7 @@ function renderDriverRequestsList() {
         ${(driverName || driverMobile) ? `
           <div class="flex items-center gap-1.5 text-[10px] mt-1 text-slate-400">
             ${driverName ? `<span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1"><i class="fas fa-user text-[8.5px] text-blue-500"></i>${driverName}</span>` : ''}
-            ${(driverName && driverMobile) ? `<span class="text-slate-500 opacity-60">•</span>` : ''}
-            ${driverMobile ? `<a href="tel:${driverMobile}" class="font-mono text-[9.5px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5" onclick="event.stopPropagation();"><i class="fas fa-phone-alt text-[7.5px]"></i>${driverMobile}</a>` : ''}
+            ${driverMobile ? `<span onclick="copyDriverMobileNumber('${driverMobile}', event)" class="font-mono text-[9.5px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer flex items-center gap-1 active:scale-95 transition-all" title="Click to copy: ${driverMobile}"><i class="fas fa-phone-alt text-[7.5px]"></i>${driverMobile}<i class="fas fa-copy text-[7.5px] opacity-60"></i></span>` : ''}
           </div>
         ` : ''}
         ${r.status === 'rejected' && (r.rejectReason || r.rejectedReason || r.reason) ? `
@@ -25828,8 +25856,7 @@ function renderDriverRequestsLogList() {
         ${(driverName || driverMobile) ? `
           <div class="flex items-center gap-1.5 text-[10px] mt-1 text-slate-400">
             ${driverName ? `<span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1"><i class="fas fa-user text-[8.5px] text-blue-500"></i>${driverName}</span>` : ''}
-            ${(driverName && driverMobile) ? `<span class="text-slate-500 opacity-60">•</span>` : ''}
-            ${driverMobile ? `<a href="tel:${driverMobile}" class="font-mono text-[9.5px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5" onclick="event.stopPropagation();"><i class="fas fa-phone-alt text-[7.5px]"></i>${driverMobile}</a>` : ''}
+            ${driverMobile ? `<span onclick="copyDriverMobileNumber('${driverMobile}', event)" class="font-mono text-[9.5px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer flex items-center gap-1 active:scale-95 transition-all" title="Click to copy: ${driverMobile}"><i class="fas fa-phone-alt text-[7.5px]"></i>${driverMobile}<i class="fas fa-copy text-[7.5px] opacity-60"></i></span>` : ''}
           </div>
         ` : ''}
         ${r.status === 'rejected' && (r.rejectReason || r.rejectedReason || r.reason) ? `
