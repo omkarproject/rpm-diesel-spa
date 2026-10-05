@@ -21066,29 +21066,69 @@ function isNewDriverVehicle(vehicleNo) {
 window.isNewDriverVehicle = isNewDriverVehicle;
 
 // === Auto Approval State & Helpers ===
+let isAutoApproveConfigLoaded = false;
 var autoApproveConfig = window.autoApproveConfig || {
-  enabled: true,
-  normalEnabled: true,
+  enabled: false, // Default is STRICTLY FALSE to prevent premature approvals before Firebase sync
+  normalEnabled: false,
   normalMins: 10,
-  upiEnabled: true,
+  upiEnabled: false,
   upiMins: 60,
-  revertEnabled: true,
+  revertEnabled: false,
   revertMins: 30
 };
+
+// Immediate hydration from localStorage cache to prevent cold-start race conditions
+try {
+  const cachedAutoConfig = localStorage.getItem('rpm_cache_auto_approve_config');
+  if (cachedAutoConfig) {
+    const parsed = JSON.parse(cachedAutoConfig);
+    if (parsed && typeof parsed === 'object') {
+      autoApproveConfig = {
+        enabled: parsed.enabled === true,
+        normalEnabled: parsed.normalEnabled === true,
+        normalMins: parseInt(parsed.normalMins) || 10,
+        upiEnabled: parsed.upiEnabled === true,
+        upiMins: parseInt(parsed.upiMins) || 60,
+        revertEnabled: parsed.revertEnabled === true,
+        revertMins: parseInt(parsed.revertMins) || 30
+      };
+      isAutoApproveConfigLoaded = true;
+    }
+  }
+} catch (e) {}
 window.autoApproveConfig = autoApproveConfig;
 
 db.ref('autoApproveTimerConfig').on('value', snapshot => {
   const val = snapshot.val();
-  if (val) {
-    autoApproveConfig = { ...autoApproveConfig, ...val };
-    if (val.normalMins >= 9999) autoApproveConfig.normalEnabled = false;
-    if (val.upiMins >= 9999) autoApproveConfig.upiEnabled = false;
-    if (val.revertMins >= 9999) autoApproveConfig.revertEnabled = false;
-    window.autoApproveConfig = autoApproveConfig;
-    if (typeof checkAndAutoApproveRequests === 'function') checkAndAutoApproveRequests();
-    if (typeof renderDriverRequestsList === 'function' && activeSection === 'driver-requests') {
-      renderDriverRequestsList();
-    }
+  isAutoApproveConfigLoaded = true;
+  if (val && typeof val === 'object') {
+    const isMasterOn = (val.enabled === true || val.enabled === 'true');
+    const isNormOn = (val.normalEnabled === true || val.normalEnabled === 'true') && (parseInt(val.normalMins) || 10) < 9999;
+    const isUpiOn = (val.upiEnabled === true || val.upiEnabled === 'true') && (parseInt(val.upiMins) || 60) < 9999;
+    const isRevOn = (val.revertEnabled === true || val.revertEnabled === 'true') && (parseInt(val.revertMins) || 30) < 9999;
+
+    autoApproveConfig = {
+      enabled: isMasterOn,
+      normalEnabled: isNormOn,
+      normalMins: (parseInt(val.normalMins) && parseInt(val.normalMins) < 9999) ? parseInt(val.normalMins) : 10,
+      upiEnabled: isUpiOn,
+      upiMins: (parseInt(val.upiMins) && parseInt(val.upiMins) < 9999) ? parseInt(val.upiMins) : 60,
+      revertEnabled: isRevOn,
+      revertMins: (parseInt(val.revertMins) && parseInt(val.revertMins) < 9999) ? parseInt(val.revertMins) : 30
+    };
+    try {
+      localStorage.setItem('rpm_cache_auto_approve_config', JSON.stringify(autoApproveConfig));
+    } catch (e) {}
+  } else {
+    autoApproveConfig.enabled = false;
+    autoApproveConfig.normalEnabled = false;
+    autoApproveConfig.upiEnabled = false;
+    autoApproveConfig.revertEnabled = false;
+  }
+  window.autoApproveConfig = autoApproveConfig;
+  if (typeof checkAndAutoApproveRequests === 'function') checkAndAutoApproveRequests();
+  if (typeof renderDriverRequestsList === 'function' && typeof activeSection !== 'undefined' && activeSection === 'driver-requests') {
+    renderDriverRequestsList();
   }
 });
 
@@ -21127,7 +21167,7 @@ function getRequestRevertedTimestamp(req) {
 
 function getAutoApproveTimerInfo(req) {
   if (!req || req.status !== 'pending') return null;
-  if (autoApproveConfig.enabled === false) {
+  if (!isAutoApproveConfigLoaded || !autoApproveConfig || autoApproveConfig.enabled !== true) {
     return { enabled: false, reason: 'System Off' };
   }
 
@@ -21142,17 +21182,17 @@ function getAutoApproveTimerInfo(req) {
 
   if (isReverted) {
     typeLabel = 'Reverted';
-    isEnabled = autoApproveConfig.revertEnabled !== false && (autoApproveConfig.revertMins || 30) < 9999;
+    isEnabled = autoApproveConfig.revertEnabled === true && (autoApproveConfig.revertMins || 30) < 9999;
     timeoutMins = autoApproveConfig.revertMins || 30;
     baseTime = getRequestRevertedTimestamp(req);
   } else if (isUpiOrOutside) {
     typeLabel = 'UPI/Outside';
-    isEnabled = autoApproveConfig.upiEnabled !== false && (autoApproveConfig.upiMins || 60) < 9999;
+    isEnabled = autoApproveConfig.upiEnabled === true && (autoApproveConfig.upiMins || 60) < 9999;
     timeoutMins = autoApproveConfig.upiMins || 60;
     baseTime = getRequestSubmittedTimestamp(req);
   } else {
     typeLabel = 'Normal';
-    isEnabled = autoApproveConfig.normalEnabled !== false && (autoApproveConfig.normalMins || 10) < 9999;
+    isEnabled = autoApproveConfig.normalEnabled === true && (autoApproveConfig.normalMins || 10) < 9999;
     timeoutMins = autoApproveConfig.normalMins || 10;
     baseTime = getRequestSubmittedTimestamp(req);
   }
@@ -23708,11 +23748,11 @@ window.submitFillReceiptAction = submitFillReceiptAction;
 
 window.openAutoApproveTimerModal = function() {
   const masterToggle = document.getElementById('timer-master-toggle');
-  if (masterToggle) masterToggle.checked = autoApproveConfig.enabled !== false;
+  if (masterToggle) masterToggle.checked = autoApproveConfig.enabled === true;
 
   const normalToggle = document.getElementById('timer-normal-toggle');
   const normalInput = document.getElementById('timer-normal-input');
-  const isNormOn = autoApproveConfig.normalEnabled !== false && (autoApproveConfig.normalMins || 10) < 9999;
+  const isNormOn = autoApproveConfig.normalEnabled === true && (autoApproveConfig.normalMins || 10) < 9999;
   if (normalToggle) normalToggle.checked = isNormOn;
   if (normalInput) {
     normalInput.value = (autoApproveConfig.normalMins >= 9999) ? 10 : (autoApproveConfig.normalMins || 10);
@@ -23723,7 +23763,7 @@ window.openAutoApproveTimerModal = function() {
 
   const upiToggle = document.getElementById('timer-upi-toggle');
   const upiInput = document.getElementById('timer-upi-input');
-  const isUpiOn = autoApproveConfig.upiEnabled !== false && (autoApproveConfig.upiMins || 60) < 9999;
+  const isUpiOn = autoApproveConfig.upiEnabled === true && (autoApproveConfig.upiMins || 60) < 9999;
   if (upiToggle) upiToggle.checked = isUpiOn;
   if (upiInput) {
     upiInput.value = (autoApproveConfig.upiMins >= 9999) ? 60 : (autoApproveConfig.upiMins || 60);
@@ -23734,7 +23774,7 @@ window.openAutoApproveTimerModal = function() {
 
   const revertToggle = document.getElementById('timer-revert-toggle');
   const revertInput = document.getElementById('timer-revert-input');
-  const isRevOn = autoApproveConfig.revertEnabled !== false && (autoApproveConfig.revertMins || 30) < 9999;
+  const isRevOn = autoApproveConfig.revertEnabled === true && (autoApproveConfig.revertMins || 30) < 9999;
   if (revertToggle) revertToggle.checked = isRevOn;
   if (revertInput) {
     revertInput.value = (autoApproveConfig.revertMins >= 9999) ? 30 : (autoApproveConfig.revertMins || 30);
@@ -23780,8 +23820,10 @@ window.closeAutoApproveTimerModal = function() {
 // === Driver Request WhatsApp Number ===
 const driverRequestWhatsAppMobileRef = db.ref('config/driver_request_whatsapp_mobile');
 const driverRequestWhatsAppSlotsRef = db.ref('config/driver_request_whatsapp_slots');
+const driverRequestWhatsAppEnabledRef = db.ref('config/driver_request_whatsapp_enabled');
 let driverRequestWhatsAppMobile = '918371838314';
 let driverRequestWhatsAppSlots = [];
+let driverRequestWhatsAppEnabled = true;
 
 driverRequestWhatsAppMobileRef.on('value', snapshot => {
   const savedNumber = String(snapshot.val() || '').replace(/\D/g, '');
@@ -23791,6 +23833,13 @@ driverRequestWhatsAppMobileRef.on('value', snapshot => {
 driverRequestWhatsAppSlotsRef.on('value', snapshot => {
   const val = snapshot.val();
   driverRequestWhatsAppSlots = Array.isArray(val) ? val : (val ? Object.values(val) : []);
+});
+
+driverRequestWhatsAppEnabledRef.on('value', snapshot => {
+  const val = snapshot.val();
+  driverRequestWhatsAppEnabled = val !== false;
+  const toggle = document.getElementById('driver-request-whatsapp-enabled-toggle');
+  if (toggle) toggle.checked = driverRequestWhatsAppEnabled;
 });
 
 window.addWhatsAppTimeSlotRow = function(slotData = { number: '', startTime: '09:00', endTime: '18:00' }) {
@@ -23829,6 +23878,11 @@ window.addWhatsAppTimeSlotRow = function(slotData = { number: '', startTime: '09
 };
 
 window.openDriverRequestMobileModal = function() {
+  const toggle = document.getElementById('driver-request-whatsapp-enabled-toggle');
+  if (toggle) {
+    toggle.checked = driverRequestWhatsAppEnabled !== false;
+  }
+
   const defaultInput = document.getElementById('driver-request-whatsapp-default-input');
   if (defaultInput) {
     defaultInput.value = driverRequestWhatsAppMobile.startsWith('91') && driverRequestWhatsAppMobile.length === 12
@@ -23863,6 +23917,8 @@ window.closeDriverRequestMobileModal = function() {
 };
 
 window.saveDriverRequestMobileNumber = function() {
+  const isEnabled = document.getElementById('driver-request-whatsapp-enabled-toggle')?.checked !== false;
+
   let defaultMobile = document.getElementById('driver-request-whatsapp-default-input').value.replace(/\D/g, '');
   if (defaultMobile.length === 10) defaultMobile = `91${defaultMobile}`;
 
@@ -23893,6 +23949,7 @@ window.saveDriverRequestMobileNumber = function() {
   }
 
   const updates = {};
+  updates['config/driver_request_whatsapp_enabled'] = isEnabled;
   updates['config/driver_request_whatsapp_mobile'] = defaultMobile;
   updates['config/driver_request_whatsapp_slots'] = validSlots;
 
@@ -25120,10 +25177,10 @@ window.copyGeneratedFullMessage = function() {
 };
 
 window.saveAutoApproveTimerSettings = function() {
-  const masterEnabled = document.getElementById('timer-master-toggle')?.checked ?? true;
-  const normalToggle = document.getElementById('timer-normal-toggle')?.checked ?? true;
-  const upiToggle = document.getElementById('timer-upi-toggle')?.checked ?? false;
-  const revertToggle = document.getElementById('timer-revert-toggle')?.checked ?? false;
+  const masterEnabled = document.getElementById('timer-master-toggle')?.checked === true;
+  const normalToggle = document.getElementById('timer-normal-toggle')?.checked === true;
+  const upiToggle = document.getElementById('timer-upi-toggle')?.checked === true;
+  const revertToggle = document.getElementById('timer-revert-toggle')?.checked === true;
 
   const normalMins = parseInt(document.getElementById('timer-normal-input').value) || 10;
   const upiMins = parseInt(document.getElementById('timer-upi-input').value) || 60;
@@ -25131,14 +25188,17 @@ window.saveAutoApproveTimerSettings = function() {
 
   autoApproveConfig = {
     enabled: masterEnabled,
-    normalEnabled: normalToggle && normalMins < 9999,
+    normalEnabled: masterEnabled && normalToggle && normalMins < 9999,
     normalMins: normalToggle ? normalMins : 10000,
-    upiEnabled: upiToggle && upiMins < 9999,
+    upiEnabled: masterEnabled && upiToggle && upiMins < 9999,
     upiMins: upiToggle ? upiMins : 10000,
-    revertEnabled: revertToggle && revertMins < 9999,
+    revertEnabled: masterEnabled && revertToggle && revertMins < 9999,
     revertMins: revertToggle ? revertMins : 10000
   };
   window.autoApproveConfig = autoApproveConfig;
+  try {
+    localStorage.setItem('rpm_cache_auto_approve_config', JSON.stringify(autoApproveConfig));
+  } catch (e) {}
 
   db.ref('autoApproveTimerConfig').set(autoApproveConfig)
     .then(() => {
@@ -25154,6 +25214,19 @@ window.saveAutoApproveTimerSettings = function() {
 
 function autoApproveRequest(req, timeoutMsg = "") {
   if (!req || !req.key) return;
+  // STRICT GUARD: If auto approval is not loaded or disabled, abort immediately
+  if (!isAutoApproveConfigLoaded || !autoApproveConfig || autoApproveConfig.enabled !== true) {
+    console.warn(`[Auto-Approve Guard] Auto approval is disabled. Denied auto-approval for ${req.vehicleNo}`);
+    req._isAutoApproving = false;
+    return;
+  }
+  const timerInfo = getAutoApproveTimerInfo(req);
+  if (!timerInfo || !timerInfo.enabled) {
+    console.warn(`[Auto-Approve Guard] Type ${timerInfo?.typeLabel || 'unknown'} is disabled. Denied auto-approval for ${req.vehicleNo}`);
+    req._isAutoApproving = false;
+    return;
+  }
+
   const key = req.key;
   const noteUpper = String(req.note || '').trim().toUpperCase();
   const autoFill = noteUpper.includes("UPI") || noteUpper.includes("OUT SIDE") || noteUpper.includes("OUTSIDE");
@@ -25254,7 +25327,7 @@ function autoApproveRequest(req, timeoutMsg = "") {
 
 function checkAndAutoApproveRequests() {
   if (typeof driverRequestsList === 'undefined' || !Array.isArray(driverRequestsList)) return;
-  if (autoApproveConfig.enabled === false) return;
+  if (!isAutoApproveConfigLoaded || !autoApproveConfig || autoApproveConfig.enabled !== true) return;
 
   driverRequestsList.forEach(req => {
     if (req && req.status === 'pending') {
@@ -25275,6 +25348,7 @@ setInterval(checkAndAutoApproveRequests, 10000);
 // Real-time 1-second UI countdown timer updater for pending request table
 if (window._autoApproveUiInterval) clearInterval(window._autoApproveUiInterval);
 window._autoApproveUiInterval = setInterval(() => {
+  if (!isAutoApproveConfigLoaded || !autoApproveConfig || autoApproveConfig.enabled !== true) return;
   const timerBadges = document.querySelectorAll('.auto-timer-badge');
   if (timerBadges.length === 0) return;
 

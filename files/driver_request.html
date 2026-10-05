@@ -969,6 +969,7 @@
     // Admin-controlled WhatsApp destination and time slots; changes apply without reloading this form.
     let driverRequestWhatsAppMobile = '918371838314';
     let driverRequestWhatsAppSlots = [];
+    let driverRequestWhatsAppEnabled = true;
 
     db.ref('config/driver_request_whatsapp_mobile').on('value', snapshot => {
       const savedNumber = String(snapshot.val() || '').replace(/\D/g, '');
@@ -978,6 +979,11 @@
     db.ref('config/driver_request_whatsapp_slots').on('value', snapshot => {
       const val = snapshot.val();
       driverRequestWhatsAppSlots = Array.isArray(val) ? val : (val ? Object.values(val) : []);
+    });
+
+    db.ref('config/driver_request_whatsapp_enabled').on('value', snapshot => {
+      const val = snapshot.val();
+      driverRequestWhatsAppEnabled = val !== false;
     });
 
     // Registered drivers sync (config/drivers) to show driver name next to vehicle no
@@ -4159,7 +4165,7 @@ Response #PENDING
       let secondsRemaining = 5;
       const countdownEl = document.getElementById('duplicate-countdown-number');
       const countdownLabel = document.getElementById('duplicate-countdown-label');
-      countdownLabel.textContent = 'Redirecting to WhatsApp in';
+      countdownLabel.textContent = (driverRequestWhatsAppEnabled !== false) ? 'Redirecting to WhatsApp in' : 'Closing in';
       countdownEl.textContent = `${secondsRemaining}s`;
       clearInterval(duplicateCountdownTimer);
 
@@ -4170,16 +4176,37 @@ Response #PENDING
         if (secondsRemaining <= 0) {
           clearInterval(duplicateCountdownTimer);
           countdownEl.textContent = 'Ready';
-          countdownLabel.textContent = 'Opening WhatsApp';
+          countdownLabel.textContent = (driverRequestWhatsAppEnabled !== false) ? 'Opening WhatsApp' : 'Completed';
           sendDuplicateWhatsAppThenReload(copyText);
         }
       }, 1000);
     }
 
+    function showSubmitSuccessOverlay(customMsg) {
+      const overlay = document.getElementById('success-overlay');
+      const msg = document.getElementById('success-overlay-msg');
+      if (msg) msg.textContent = customMsg || "Aapka voucher submit ho gaya hai! Admin approval ke liye pending hai.";
+      if (overlay) {
+        overlay.classList.remove('hidden');
+        setTimeout(() => {
+          overlay.classList.add('hidden');
+        }, 3000);
+      }
+      if (typeof showCopyToast === 'function') {
+        showCopyToast(customMsg || "✅ Request Submitted Successfully!");
+      }
+    }
+
     function sendDuplicateWhatsAppThenReload(copyText) {
       copyToClipboard(copyText).catch(() => {});
-      // openWhatsAppMessage owns the single hand-off + single reload path.
-      openWhatsAppMessage(copyText);
+      if (driverRequestWhatsAppEnabled !== false) {
+        // openWhatsAppMessage owns the single hand-off + single reload path.
+        openWhatsAppMessage(copyText);
+      } else {
+        const statusOverlay = document.getElementById('status-overlay');
+        if (statusOverlay) statusOverlay.classList.add('hidden');
+        showSubmitSuccessOverlay("Request already exists or submitted!");
+      }
     }
 
     // Live listener for Vendor KM Photo Permissions & Excluded KM Vehicles
@@ -4317,7 +4344,11 @@ Response #PENDING
         setDefaults();
         resetSubmitState();
         whatsAppHandOffDone = false;
-        openWhatsAppMessage(copyText);
+        if (driverRequestWhatsAppEnabled !== false) {
+          openWhatsAppMessage(copyText);
+        } else {
+          showSubmitSuccessOverlay();
+        }
       };
 
       // Timer gives 6 seconds for slow 2G before allowing WhatsApp handoff in background

@@ -5856,6 +5856,22 @@
       </div>
       
       <div class="p-5 overflow-y-auto flex-1 space-y-4">
+        <!-- Master WhatsApp Redirect Toggle -->
+        <div class="p-3.5 bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/40 dark:border-slate-800/40 flex items-center justify-between">
+          <div class="pr-3">
+            <label for="driver-request-whatsapp-enabled-toggle" class="cursor-pointer block text-xs font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+              <i class="fab fa-whatsapp text-emerald-500 text-sm"></i> WhatsApp Redirect on Submit
+            </label>
+            <p class="text-[10px] text-slate-400 mt-0.5 leading-relaxed">
+              Jab OFF hoga, driver form submit hone par WhatsApp open nahi hoga, form pe direct "Submitted Successfully" show hoga.
+            </p>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+            <input type="checkbox" id="driver-request-whatsapp-enabled-toggle" class="sr-only peer" checked>
+            <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-emerald-500"></div>
+          </label>
+        </div>
+
         <!-- Default Fallback Number -->
         <div class="p-3.5 bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/40 dark:border-slate-800/40">
           <label class="block text-xs font-bold text-slate-600 dark:text-slate-300 mb-1 uppercase flex items-center gap-1.5">
@@ -7005,7 +7021,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=135" defer></script>
+  <script src="script.js?v=136" defer></script>
   <script src="broadcast.js?v=5" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
