@@ -27066,6 +27066,20 @@ window.updateMaintenance = function(key, value) {
     });
 };
 
+window.disableMaintenance = function() {
+  db.ref('maintenanceMode').update({
+    fullWeb: false,
+    onlyWeb: false
+  }).then(() => {
+    toast.ok("Maintenance mode disabled!");
+    const overlay = document.getElementById('maintenance-overlay');
+    if (overlay) overlay.classList.add('hidden');
+  }).catch(err => {
+    toast.error("Failed to disable maintenance mode");
+    console.error(err);
+  });
+};
+
 db.ref('maintenanceMode').on('value', snap => {
   const data = snap.val() || {};
   
@@ -27190,105 +27204,323 @@ db.ref('broadcasts/active').on('value', snap => {
 // ==========================================
 
 let brandingDataCache = {};
+let pendingResizedLogo = null;
+let pendingResizedFavicon = null;
 
-// Helper to convert file to base64
-async function getBase64(file) {
+// Helper to resize and compress any image to optimal dimensions
+function resizeImageFile(file, maxWidth, maxHeight, isSquare = false, quality = 0.88) {
   return new Promise((resolve, reject) => {
+    if (!file) return resolve('');
     const reader = new FileReader();
+    reader.onload = function(e) {
+      const img = new Image();
+      img.onload = function() {
+        let width = img.width;
+        let height = img.height;
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+
+        if (isSquare) {
+          // Crop square from center and resize to max dimension (e.g. 64x64)
+          const size = Math.min(width, height);
+          const sx = (width - size) / 2;
+          const sy = (height - size) / 2;
+          const targetSize = Math.min(size, maxWidth || 64);
+          canvas.width = targetSize;
+          canvas.height = targetSize;
+          ctx.drawImage(img, sx, sy, size, size, 0, 0, targetSize, targetSize);
+          resolve(canvas.toDataURL('image/png'));
+        } else {
+          // Preserve aspect ratio
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // If transparent PNG or SVG, export as PNG; else JPEG
+          if (file.type === 'image/png' || file.type === 'image/svg+xml') {
+            resolve(canvas.toDataURL('image/png'));
+          } else {
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          }
+        }
+      };
+      img.onerror = () => reject(new Error('Failed to load image.'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file.'));
     reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = error => reject(error);
   });
 }
+
+function updateLogoPreview(src) {
+  const box = document.getElementById('brand-logo-preview-box');
+  const img = document.getElementById('brand-logo-preview');
+  if (box && img) {
+    if (src) {
+      img.src = src;
+      box.classList.remove('hidden');
+    } else {
+      img.src = '';
+      box.classList.add('hidden');
+    }
+  }
+}
+
+function updateFaviconPreview(src) {
+  const box = document.getElementById('brand-favicon-preview-box');
+  const img = document.getElementById('brand-favicon-preview');
+  if (box && img) {
+    if (src) {
+      img.src = src;
+      box.classList.remove('hidden');
+    } else {
+      img.src = '';
+      box.classList.add('hidden');
+    }
+  }
+}
+
+window.clearBrandingLogo = function() {
+  pendingResizedLogo = null;
+  const fileInput = document.getElementById('brand-logo-file');
+  if (fileInput) fileInput.value = '';
+  const urlInput = document.getElementById('brand-logo-url');
+  if (urlInput) urlInput.value = '';
+  updateLogoPreview('');
+  toast.info("Logo cleared. Click 'Apply Branding' to save changes.");
+};
+
+window.clearBrandingFavicon = function() {
+  pendingResizedFavicon = null;
+  const fileInput = document.getElementById('brand-favicon-file');
+  if (fileInput) fileInput.value = '';
+  const urlInput = document.getElementById('brand-favicon-url');
+  if (urlInput) urlInput.value = '';
+  updateFaviconPreview('');
+  toast.info("Favicon cleared. Click 'Apply Branding' to save changes.");
+};
+
+window.showBrandingInfo = function(type) {
+  const modal = document.getElementById('branding-info-modal');
+  const content = document.getElementById('branding-info-modal-content');
+  if (!modal || !content) return;
+
+  if (type === 'logo') {
+    content.innerHTML = `
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-2xl bg-purple-500/10 text-purple-600 flex items-center justify-center text-xl shrink-0">
+          <i class="fas fa-image"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Logo Guidelines & Size</h3>
+          <p class="text-xs text-slate-500">Optimized sizing for web and mobile headers</p>
+        </div>
+      </div>
+      <div class="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+        <div class="p-3 bg-purple-50 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800/40">
+          <p class="font-bold text-purple-700 dark:text-purple-300 mb-1">Recommended Dimensions:</p>
+          <p class="text-slate-700 dark:text-slate-300">• <strong>Horizontal / Header:</strong> 250×60 px to 400×120 px (Recommended)</p>
+          <p class="text-slate-700 dark:text-slate-300">• <strong>Square Icon:</strong> 120×120 px to 200×200 px</p>
+        </div>
+        <div class="space-y-1.5 text-slate-500 dark:text-slate-400">
+          <p>• <strong>Supported Formats:</strong> PNG (Transparent recommended), JPG, WebP, SVG.</p>
+          <p>• <strong>Automatic Auto-Resize:</strong> Any image you upload (even a high-res 10MB photo) is automatically resized to max 400×120 px and compressed (&lt; 40KB) for ultra-fast loading.</p>
+          <p>• <strong>Best Aspect Ratio:</strong> 3:1 or 4:1 landscape ratio fits best in header and sidebar.</p>
+        </div>
+      </div>
+      <button type="button" onclick="closeBrandingInfoModal()" class="mt-5 w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs transition-colors">
+        Got it!
+      </button>
+    `;
+  } else {
+    content.innerHTML = `
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center text-xl shrink-0">
+          <i class="fas fa-icons"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Favicon Guidelines & Size</h3>
+          <p class="text-xs text-slate-500">Browser tab & bookmark icon</p>
+        </div>
+      </div>
+      <div class="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+        <div class="p-3 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-800/40">
+          <p class="font-bold text-indigo-700 dark:text-indigo-300 mb-1">Recommended Dimensions:</p>
+          <p class="text-slate-700 dark:text-slate-300">• <strong>Square (1:1 Ratio):</strong> 32×32 px, 64×64 px, or 128×128 px</p>
+        </div>
+        <div class="space-y-1.5 text-slate-500 dark:text-slate-400">
+          <p>• <strong>Supported Formats:</strong> PNG, ICO, SVG, JPG.</p>
+          <p>• <strong>Automatic Auto-Resize:</strong> Any uploaded image is automatically centered, cropped to a 1:1 square, and resized to 64×64 px PNG (&lt; 15KB) for crystal-clear browser tabs.</p>
+          <p>• <strong>Tip:</strong> Keep the graphic simple so it looks sharp at small sizes.</p>
+        </div>
+      </div>
+      <button type="button" onclick="closeBrandingInfoModal()" class="mt-5 w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-colors">
+        Got it!
+      </button>
+    `;
+  }
+  modal.classList.remove('hidden');
+};
+
+window.closeBrandingInfoModal = function() {
+  const modal = document.getElementById('branding-info-modal');
+  if (modal) modal.classList.add('hidden');
+};
 
 window.updateAppBranding = async function() {
   const target = document.getElementById('brand-target').value;
   const name = document.getElementById('brand-app-name').value.trim();
-  
-  const logoType = document.querySelector('input[name="logo-type"]:checked').value;
+  const existing = brandingDataCache[target] || {};
+
+  // Logo
+  const logoTypeChecked = document.querySelector('input[name="logo-type"]:checked');
+  const logoType = logoTypeChecked ? logoTypeChecked.value : 'link';
   let logoUrl = '';
+
   if (logoType === 'link') {
     logoUrl = document.getElementById('brand-logo-url').value.trim();
   } else {
-    const file = document.getElementById('brand-logo-file').files[0];
-    if (file) {
-      if (file.size > 200 * 1024) return toast.error('Logo file size must be less than 200KB.');
-      logoUrl = await getBase64(file);
+    if (pendingResizedLogo) {
+      logoUrl = pendingResizedLogo;
     } else {
-      const existing = brandingDataCache[target] || {};
-      logoUrl = existing.logoUrl || '';
+      const file = document.getElementById('brand-logo-file')?.files[0];
+      if (file) {
+        try {
+          logoUrl = await resizeImageFile(file, 400, 120, false, 0.88);
+        } catch (err) {
+          return toast.error("Failed to resize uploaded logo.");
+        }
+      } else {
+        logoUrl = existing.logoUrl || '';
+      }
     }
   }
 
-  const faviconType = document.querySelector('input[name="favicon-type"]:checked').value;
+  // Favicon
+  const faviconTypeChecked = document.querySelector('input[name="favicon-type"]:checked');
+  const faviconType = faviconTypeChecked ? faviconTypeChecked.value : 'link';
   let faviconUrl = '';
+
   if (faviconType === 'link') {
     faviconUrl = document.getElementById('brand-favicon-url').value.trim();
   } else {
-    const file = document.getElementById('brand-favicon-file').files[0];
-    if (file) {
-      if (file.size > 100 * 1024) return toast.error('Favicon file size must be less than 100KB.');
-      faviconUrl = await getBase64(file);
+    if (pendingResizedFavicon) {
+      faviconUrl = pendingResizedFavicon;
     } else {
-      const existing = brandingDataCache[target] || {};
-      faviconUrl = existing.faviconUrl || '';
+      const file = document.getElementById('brand-favicon-file')?.files[0];
+      if (file) {
+        try {
+          faviconUrl = await resizeImageFile(file, 64, 64, true, 0.9);
+        } catch (err) {
+          return toast.error("Failed to resize uploaded favicon.");
+        }
+      } else {
+        faviconUrl = existing.faviconUrl || '';
+      }
     }
   }
 
-  if (!name && !logoUrl && !faviconUrl && logoType !== 'upload' && faviconType !== 'upload') {
-    toast.error('Please provide at least one branding value to update.');
-    return;
-  }
-
-  const payload = { updatedAt: firebase.database.ServerValue.TIMESTAMP };
-  if (name) payload.appName = name;
-  if (logoUrl) payload.logoUrl = logoUrl;
-  if (faviconUrl) payload.faviconUrl = faviconUrl;
+  const payload = {
+    updatedAt: firebase.database.ServerValue.TIMESTAMP,
+    appName: name || existing.appName || '',
+    logoUrl: logoUrl,
+    faviconUrl: faviconUrl
+  };
 
   try {
-    await db.ref(`settings/branding/${target}`).update(payload);
+    if (target === 'all') {
+      await db.ref('settings/branding/all').set(payload);
+      // Keep root keys updated for legacy backwards compatibility
+      await db.ref('settings/branding').update({
+        appName: payload.appName,
+        logoUrl: payload.logoUrl,
+        faviconUrl: payload.faviconUrl,
+        updatedAt: payload.updatedAt
+      });
+    } else {
+      await db.ref(`settings/branding/${target}`).set(payload);
+    }
+
     if (!brandingDataCache[target]) brandingDataCache[target] = {};
     Object.assign(brandingDataCache[target], payload);
+
     try {
       localStorage.setItem('rpm_app_branding', JSON.stringify(brandingDataCache));
     } catch(e) {}
-    if (typeof applyAppBrandingToPage === 'function') {
-      applyAppBrandingToPage(brandingDataCache);
-    }
-    toast.ok(`Branding updated successfully for ${target === 'all' ? 'All Applications' : target}!`);
+
+    applyAppBrandingToPage(brandingDataCache);
+
+    const targetLabel = target === 'all' ? 'All Applications' : (target === 'admin' ? 'Admin Panel' : (target === 'driver' ? 'Driver Request Form' : 'Diesel Station'));
+    toast.ok(`Branding successfully updated for ${targetLabel}!`);
   } catch (error) {
-    toast.error('Failed to update branding.');
     console.error(error);
+    toast.error('Failed to save branding.');
   }
 };
 
 window.populateBrandingForm = function() {
+  pendingResizedLogo = null;
+  pendingResizedFavicon = null;
+
   const target = document.getElementById('brand-target').value;
   const data = brandingDataCache[target] || {};
+  const globalData = brandingDataCache['all'] || {};
   
-  document.getElementById('brand-app-name').value = data.appName || '';
-  
+  // App Name
+  const appNameInput = document.getElementById('brand-app-name');
+  if (appNameInput) {
+    appNameInput.value = data.appName || '';
+    if (!data.appName && target !== 'all' && globalData.appName) {
+      appNameInput.placeholder = `Inheriting: "${globalData.appName}"`;
+    } else {
+      appNameInput.placeholder = "e.g. RPM Logistics Pvt. Ltd.";
+    }
+  }
+
+  // Logo
   const logoUrl = data.logoUrl || '';
+  const effectiveLogo = logoUrl || (target !== 'all' ? globalData.logoUrl : '') || '';
+  updateLogoPreview(effectiveLogo);
+
+  const logoFileInput = document.getElementById('brand-logo-file');
+  if (logoFileInput) logoFileInput.value = '';
+
   if (logoUrl.startsWith('data:image')) {
-    document.querySelector('input[name="logo-type"][value="upload"]').checked = true;
+    const radioUpload = document.querySelector('input[name="logo-type"][value="upload"]');
+    if (radioUpload) radioUpload.checked = true;
     document.getElementById('brand-logo-url').value = '';
     document.getElementById('brand-logo-url').classList.add('hidden');
     document.getElementById('brand-logo-file').classList.remove('hidden');
   } else {
-    document.querySelector('input[name="logo-type"][value="link"]').checked = true;
+    const radioLink = document.querySelector('input[name="logo-type"][value="link"]');
+    if (radioLink) radioLink.checked = true;
     document.getElementById('brand-logo-url').value = logoUrl;
     document.getElementById('brand-logo-url').classList.remove('hidden');
     document.getElementById('brand-logo-file').classList.add('hidden');
   }
 
+  // Favicon
   const faviconUrl = data.faviconUrl || '';
+  const effectiveFavicon = faviconUrl || (target !== 'all' ? globalData.faviconUrl : '') || '';
+  updateFaviconPreview(effectiveFavicon);
+
+  const faviconFileInput = document.getElementById('brand-favicon-file');
+  if (faviconFileInput) faviconFileInput.value = '';
+
   if (faviconUrl.startsWith('data:image')) {
-    document.querySelector('input[name="favicon-type"][value="upload"]').checked = true;
+    const radioUpload = document.querySelector('input[name="favicon-type"][value="upload"]');
+    if (radioUpload) radioUpload.checked = true;
     document.getElementById('brand-favicon-url').value = '';
     document.getElementById('brand-favicon-url').classList.add('hidden');
     document.getElementById('brand-favicon-file').classList.remove('hidden');
   } else {
-    document.querySelector('input[name="favicon-type"][value="link"]').checked = true;
+    const radioLink = document.querySelector('input[name="favicon-type"][value="link"]');
+    if (radioLink) radioLink.checked = true;
     document.getElementById('brand-favicon-url').value = faviconUrl;
     document.getElementById('brand-favicon-url').classList.remove('hidden');
     document.getElementById('brand-favicon-file').classList.add('hidden');
@@ -27297,31 +27529,83 @@ window.populateBrandingForm = function() {
 
 document.addEventListener('DOMContentLoaded', () => {
   const brandTarget = document.getElementById('brand-target');
-  if(brandTarget) brandTarget.addEventListener('change', populateBrandingForm);
+  if (brandTarget) brandTarget.addEventListener('change', populateBrandingForm);
   
   document.querySelectorAll('input[name="logo-type"]').forEach(r => {
     r.addEventListener('change', e => {
-      if(e.target.value === 'link') {
+      if (e.target.value === 'link') {
         document.getElementById('brand-logo-url').classList.remove('hidden');
         document.getElementById('brand-logo-file').classList.add('hidden');
+        updateLogoPreview(document.getElementById('brand-logo-url').value.trim());
       } else {
         document.getElementById('brand-logo-url').classList.add('hidden');
         document.getElementById('brand-logo-file').classList.remove('hidden');
+        updateLogoPreview(pendingResizedLogo || '');
       }
     });
   });
 
   document.querySelectorAll('input[name="favicon-type"]').forEach(r => {
     r.addEventListener('change', e => {
-      if(e.target.value === 'link') {
+      if (e.target.value === 'link') {
         document.getElementById('brand-favicon-url').classList.remove('hidden');
         document.getElementById('brand-favicon-file').classList.add('hidden');
+        updateFaviconPreview(document.getElementById('brand-favicon-url').value.trim());
       } else {
         document.getElementById('brand-favicon-url').classList.add('hidden');
         document.getElementById('brand-favicon-file').classList.remove('hidden');
+        updateFaviconPreview(pendingResizedFavicon || '');
       }
     });
   });
+
+  const logoFileEl = document.getElementById('brand-logo-file');
+  if (logoFileEl) {
+    logoFileEl.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        toast.info("Auto-resizing & optimizing logo...");
+        pendingResizedLogo = await resizeImageFile(file, 400, 120, false, 0.88);
+        updateLogoPreview(pendingResizedLogo);
+        toast.ok("Logo auto-resized successfully!");
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to process logo image.");
+      }
+    });
+  }
+
+  const faviconFileEl = document.getElementById('brand-favicon-file');
+  if (faviconFileEl) {
+    faviconFileEl.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        toast.info("Auto-resizing favicon to square...");
+        pendingResizedFavicon = await resizeImageFile(file, 64, 64, true, 0.9);
+        updateFaviconPreview(pendingResizedFavicon);
+        toast.ok("Favicon auto-resized (64x64) successfully!");
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to process favicon image.");
+      }
+    });
+  }
+
+  const logoUrlEl = document.getElementById('brand-logo-url');
+  if (logoUrlEl) {
+    logoUrlEl.addEventListener('input', (e) => {
+      updateLogoPreview(e.target.value.trim());
+    });
+  }
+
+  const faviconUrlEl = document.getElementById('brand-favicon-url');
+  if (faviconUrlEl) {
+    faviconUrlEl.addEventListener('input', (e) => {
+      updateFaviconPreview(e.target.value.trim());
+    });
+  }
 });
 
 function applyAppBrandingToPage(data) {
@@ -27331,9 +27615,9 @@ function applyAppBrandingToPage(data) {
   const globalCfg = data['all'] || {};
   const appCfg = data[appKey] || {};
 
-  const appName = appCfg.appName || globalCfg.appName;
-  const faviconUrl = appCfg.faviconUrl || globalCfg.faviconUrl;
-  const logoUrl = appCfg.logoUrl || globalCfg.logoUrl;
+  const appName = appCfg.appName || globalCfg.appName || data.appName || '';
+  const faviconUrl = appCfg.faviconUrl || globalCfg.faviconUrl || data.faviconUrl || '';
+  const logoUrl = appCfg.logoUrl || globalCfg.logoUrl || data.logoUrl || '';
 
   if (appName) {
     document.title = appName;
@@ -27366,16 +27650,16 @@ window.applyAppBrandingToPage = applyAppBrandingToPage;
 
 db.ref('settings/branding').on('value', snap => {
   let data = snap.val() || {};
-  if (data.appName || data.logoUrl || data.faviconUrl) {
-    if (!data.all && !data.admin && !data.driver && !data.station) {
-      data = { all: data };
-    }
-  }
+  if (!data.all) data.all = {};
+  if (data.appName && !data.all.appName) data.all.appName = data.appName;
+  if (data.logoUrl && !data.all.logoUrl) data.all.logoUrl = data.logoUrl;
+  if (data.faviconUrl && !data.all.faviconUrl) data.all.faviconUrl = data.faviconUrl;
+
   brandingDataCache = data;
   try {
     localStorage.setItem('rpm_app_branding', JSON.stringify(data));
   } catch(e) {}
-  if(document.getElementById('brand-target')) {
+  if (document.getElementById('brand-target')) {
     populateBrandingForm();
   }
   applyAppBrandingToPage(data);

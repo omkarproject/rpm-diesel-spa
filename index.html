@@ -143,11 +143,28 @@
           setTimeout(function() { if (splash && splash.parentNode) splash.parentNode.removeChild(splash); }, 300);
         }
       }, 400);
-    </script>
   </div>
 
-
-
+  <!-- Maintenance Overlay for Admin Panel -->
+  <div id="maintenance-overlay" class="fixed inset-0 z-[99998] bg-slate-900/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center hidden">
+    <div class="relative max-w-md w-full bg-slate-900 border border-fuchsia-500/30 rounded-3xl p-8 shadow-2xl flex flex-col items-center">
+      <div class="w-20 h-20 bg-fuchsia-500/10 border border-fuchsia-500/30 rounded-2xl flex items-center justify-center text-4xl text-fuchsia-500 mb-5 animate-pulse">
+        <i class="fas fa-tools"></i>
+      </div>
+      <h1 class="text-white text-2xl md:text-3xl font-black mb-2 tracking-tight">System Under Maintenance</h1>
+      <p class="text-slate-400 text-xs md:text-sm max-w-sm mb-6 leading-relaxed">
+        Web Admin Panel is currently in Maintenance Mode.
+      </p>
+      <div class="flex flex-col sm:flex-row items-center gap-3 w-full">
+        <button type="button" onclick="document.getElementById('maintenance-overlay').classList.add('hidden')" class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2">
+          <i class="fas fa-eye"></i> Bypass / Dismiss
+        </button>
+        <button type="button" onclick="window.disableMaintenance()" class="w-full py-2.5 px-4 bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-fuchsia-500/20 flex items-center justify-center gap-2">
+          <i class="fas fa-power-off"></i> Turn Off
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- ==========================================
        1. ROOT LOGIN OVERLAY
@@ -4054,7 +4071,12 @@
                 </div>
                 <div>
                   <div class="flex items-center justify-between mb-1">
-                    <label class="block text-xs font-bold text-slate-500">Logo</label>
+                    <div class="flex items-center gap-1.5">
+                      <label class="block text-xs font-bold text-slate-500">Logo</label>
+                      <button type="button" onclick="showBrandingInfo('logo')" class="text-purple-500 hover:text-purple-600 focus:outline-none transition-transform hover:scale-110" title="Click for Logo Size Guide">
+                        <i class="fas fa-info-circle text-xs"></i>
+                      </button>
+                    </div>
                     <div class="flex gap-3 text-[10px] text-slate-500 font-bold">
                       <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="logo-type" value="link" checked class="accent-purple-500"> Link</label>
                       <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="logo-type" value="upload" class="accent-purple-500"> Upload</label>
@@ -4062,11 +4084,23 @@
                   </div>
                   <input type="text" id="brand-logo-url" placeholder="https://..." class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-purple-500 transition-all">
                   <input type="file" id="brand-logo-file" accept="image/*" class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm rounded-xl px-3 py-[7px] focus:outline-none focus:border-purple-500 transition-all hidden file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-[10px] file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 dark:file:bg-slate-700 dark:file:text-slate-300 cursor-pointer">
-                  <p class="text-[10px] text-slate-400 mt-1" id="brand-logo-hint">Provide a link to your logo image.</p>
+                  
+                  <div class="flex items-center justify-between mt-1.5 gap-2">
+                    <p class="text-[10px] text-slate-400" id="brand-logo-hint">Recommended: 200×60px to 400×120px (Auto-resized on upload)</p>
+                    <div id="brand-logo-preview-box" class="hidden flex items-center gap-1.5 shrink-0">
+                      <img id="brand-logo-preview" src="" alt="Preview" class="h-6 max-w-[100px] object-contain border border-slate-200 dark:border-slate-700 rounded bg-white/50 dark:bg-slate-800 p-0.5">
+                      <button type="button" onclick="clearBrandingLogo()" class="text-[10px] text-red-500 hover:text-red-600 p-0.5" title="Clear logo"><i class="fas fa-trash-alt"></i></button>
+                    </div>
+                  </div>
                 </div>
                 <div class="md:col-span-2">
                   <div class="flex items-center justify-between mb-1">
-                    <label class="block text-xs font-bold text-slate-500">Favicon</label>
+                    <div class="flex items-center gap-1.5">
+                      <label class="block text-xs font-bold text-slate-500">Favicon</label>
+                      <button type="button" onclick="showBrandingInfo('favicon')" class="text-purple-500 hover:text-purple-600 focus:outline-none transition-transform hover:scale-110" title="Click for Favicon Size Guide">
+                        <i class="fas fa-info-circle text-xs"></i>
+                      </button>
+                    </div>
                     <div class="flex gap-3 text-[10px] text-slate-500 font-bold">
                       <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="favicon-type" value="link" checked class="accent-purple-500"> Link</label>
                       <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="favicon-type" value="upload" class="accent-purple-500"> Upload</label>
@@ -4074,7 +4108,14 @@
                   </div>
                   <input type="text" id="brand-favicon-url" placeholder="https://..." class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-purple-500 transition-all">
                   <input type="file" id="brand-favicon-file" accept="image/*" class="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm rounded-xl px-3 py-[7px] focus:outline-none focus:border-purple-500 transition-all hidden file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-[10px] file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 dark:file:bg-slate-700 dark:file:text-slate-300 cursor-pointer">
-                  <p class="text-[10px] text-slate-400 mt-1" id="brand-favicon-hint">Provide a link to your favicon image.</p>
+                  
+                  <div class="flex items-center justify-between mt-1.5 gap-2">
+                    <p class="text-[10px] text-slate-400" id="brand-favicon-hint">Recommended: 32×32px to 128×128px Square (Auto-resized to 64×64)</p>
+                    <div id="brand-favicon-preview-box" class="hidden flex items-center gap-1.5 shrink-0">
+                      <img id="brand-favicon-preview" src="" alt="Preview" class="w-6 h-6 object-contain border border-slate-200 dark:border-slate-700 rounded bg-white/50 dark:bg-slate-800 p-0.5">
+                      <button type="button" onclick="clearBrandingFavicon()" class="text-[10px] text-red-500 hover:text-red-600 p-0.5" title="Clear favicon"><i class="fas fa-trash-alt"></i></button>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class="mt-6">
@@ -4101,6 +4142,18 @@
        3. MODAL OVERLAYS
        ========================================== -->
   
+  <!-- MODAL: BRANDING GUIDELINES & SIZES -->
+  <div id="branding-info-modal" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-[100] hidden p-4">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative text-left transition-all">
+      <button type="button" onclick="closeBrandingInfoModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-white text-lg p-1">
+        <i class="fas fa-times"></i>
+      </button>
+      <div id="branding-info-modal-content">
+        <!-- Injected via JavaScript -->
+      </div>
+    </div>
+  </div>
+
     <!-- MODAL: DIESEL CALCULATOR -->
   <div id="diesel-calc-modal" class="fixed inset-0 bg-slate-900/60 dark:bg-black/80 flex items-center justify-center z-50 hidden backdrop-blur-sm">
     <div class="glass-panel w-full max-w-6xl mx-4 max-h-[90vh] overflow-y-auto rounded-3xl border border-white/10 dark:border-white/5 flex flex-col shadow-2xl">
@@ -6929,7 +6982,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=126" defer></script>
+  <script src="script.js?v=127" defer></script>
   <script src="broadcast.js?v=3" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->

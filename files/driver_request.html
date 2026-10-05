@@ -1009,12 +1009,18 @@
     db.ref('settings/branding').on('value', snap => {
       let data = snap.val() || {};
       try { localStorage.setItem('rpm_app_branding', JSON.stringify(data)); } catch(e){}
-      if (data.appName || data.logoUrl || data.faviconUrl) {
-        if (!data.all && !data.admin && !data.driver && !data.station) {
-          data = { all: data };
-        }
-      }
-      const b = data.driver || data.all || {};
+      if (!data.all) data.all = {};
+      if (data.appName && !data.all.appName) data.all.appName = data.appName;
+      if (data.logoUrl && !data.all.logoUrl) data.all.logoUrl = data.logoUrl;
+      if (data.faviconUrl && !data.all.faviconUrl) data.all.faviconUrl = data.faviconUrl;
+
+      const globalCfg = data.all || {};
+      const appCfg = data.driver || {};
+      const b = {
+        appName: appCfg.appName || globalCfg.appName || data.appName || '',
+        logoUrl: appCfg.logoUrl || globalCfg.logoUrl || data.logoUrl || '',
+        faviconUrl: appCfg.faviconUrl || globalCfg.faviconUrl || data.faviconUrl || ''
+      };
       
       // Update Logo
       if (b.logoUrl) {
@@ -1050,6 +1056,20 @@
         document.querySelectorAll('.sys-brand-name').forEach(el => {
           el.textContent = b.appName;
         });
+      }
+    });
+
+    // Realtime Maintenance Mode Listener for Driver Request Form
+    db.ref('maintenanceMode').on('value', snap => {
+      const data = snap.val() || {};
+      const isMaint = !!(data.fullWeb || data.driverRequest);
+      const overlay = document.getElementById('maintenance-overlay');
+      if (overlay) {
+        if (isMaint) {
+          overlay.classList.remove('hidden');
+        } else {
+          overlay.classList.add('hidden');
+        }
       }
     });
 
