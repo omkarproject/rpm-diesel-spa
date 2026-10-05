@@ -2080,7 +2080,9 @@ driversRef.on('value', snapshot => {
           mobile: item.mobile, 
           tag: item.tag || '', 
           key: key, 
-          createdAt: item.createdAt || Date.now() 
+          createdAt: item.createdAt || Date.now(),
+          updatedAt: item.updatedAt || null,
+          history: Array.isArray(item.history) ? item.history : (item.history ? Object.values(item.history) : [])
         });
         driverKeysMap[item.name.toUpperCase()] = key;
       }
@@ -2098,6 +2100,9 @@ driversRef.on('value', snapshot => {
   }
   if (typeof renderDriverRequestsList === 'function' && typeof activeSection !== 'undefined' && activeSection === 'driver-requests') {
     renderDriverRequestsList();
+  }
+  if (typeof renderLedgerTable === 'function' && typeof activeSection !== 'undefined' && activeSection === 'ledger') {
+    renderLedgerTable();
   }
 }, error => {
   isDriversLoading = false;
@@ -3519,6 +3524,105 @@ function renderAnalyticsCharts() {
 let ledgerPage = 1;
 const ledgerPageSize = 25;
 
+// Helper to look up assigned driver by vehicle number across admin forms
+window.getDriverDetailsForVehicle = function(vehicleNo) {
+  if (!vehicleNo || !Array.isArray(driversList)) return null;
+  const clean = String(vehicleNo).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!clean) return null;
+  const found = driversList.find(d => {
+    if (!d || !d.vehicleNo) return false;
+    const vClean = String(d.vehicleNo).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return vClean === clean;
+  });
+  return found ? { 
+    name: found.name, 
+    mobile: found.mobile, 
+    tag: found.tag, 
+    history: Array.isArray(found.history) ? found.history : (found.history ? Object.values(found.history) : []), 
+    createdAt: found.createdAt, 
+    updatedAt: found.updatedAt 
+  } : null;
+};
+
+// Helper to resolve driver details for Diesel Records (preserves historical driver assignments)
+window.getEntryDriverInfo = function(e) {
+  if (!e) return { name: '', mobile: '' };
+
+  // 1. If entry already has its own stamped driverName / driverMobile, use it (preserves past historical record)
+  if (e.driverName || e.driverMobile) {
+    return {
+      name: e.driverName || '',
+      mobile: e.driverMobile || e.mobile || ''
+    };
+  }
+
+  const cleanVeh = String(e.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!cleanVeh) return { name: '', mobile: '' };
+
+  // 2. Check if a linked driver request has the original submitted driver info
+  if (typeof driverRequestsList !== 'undefined' && Array.isArray(driverRequestsList)) {
+    const linkedReq = driverRequestsList.find(r => 
+      r && (
+        (r.linkedResponseNumber && String(r.linkedResponseNumber) === String(e.responseNumber)) ||
+        (r.responseNumber && String(r.responseNumber) === String(e.responseNumber))
+      )
+    );
+    if (linkedReq && (linkedReq.driverName || linkedReq.driverMobile || linkedReq.mobile)) {
+      return {
+        name: linkedReq.driverName || '',
+        mobile: linkedReq.driverMobile || linkedReq.mobile || ''
+      };
+    }
+  }
+
+  // 3. Check driver assignment timeline/history based on entry timestamp
+  const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanVeh) : null;
+  if (regDriver) {
+    let entryTime = e.timestamp || e._time || 0;
+    if (!entryTime && e.date) {
+      const parsed = (typeof parseDateStr === 'function') ? parseDateStr(e.date) : new Date(e.date);
+      entryTime = parsed ? (parsed.getTime ? parsed.getTime() : 0) : 0;
+    }
+
+    if (Array.isArray(regDriver.history) && regDriver.history.length > 0 && entryTime > 0) {
+      const sortedHist = [...regDriver.history].sort((a, b) => (a.until || 0) - (b.until || 0));
+      for (let h of sortedHist) {
+        if (h && entryTime <= (h.until || 0)) {
+          return {
+            name: h.name || '',
+            mobile: h.mobile || ''
+          };
+        }
+      }
+    }
+
+    return {
+      name: regDriver.name || '',
+      mobile: regDriver.mobile || ''
+    };
+  }
+
+  return { name: '', mobile: '' };
+};
+
+// Helper to resolve driver details for driver request lists (preserves original requested driver)
+window.getRequestDriverInfo = function(r) {
+  if (!r) return { name: '', mobile: '' };
+  if (r.driverName || r.driverMobile) {
+    return {
+      name: r.driverName || '',
+      mobile: r.driverMobile || r.mobile || ''
+    };
+  }
+  const cleanVeh = String(r.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!cleanVeh) return { name: '', mobile: '' };
+  const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanVeh) : null;
+  return {
+    name: (regDriver && regDriver.name) || '',
+    mobile: (regDriver && regDriver.mobile) || r.mobile || ''
+  };
+};
+
 function renderLedgerTable() {
   const tbody = document.getElementById('diesel-ledger-body');
   if (!tbody) return;
@@ -3584,6 +3688,12 @@ function renderLedgerTable() {
       mileageVal = vehicleTypes[vTypeKey];
     }
 
+    const dInfo = (typeof window.getEntryDriverInfo === 'function')
+      ? window.getEntryDriverInfo(e)
+      : { name: e.driverName || '', mobile: e.driverMobile || e.mobile || '' };
+    const dName = dInfo.name || '';
+    const dMobile = dInfo.mobile || '';
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="px-3 py-3 text-center whitespace-nowrap no-print min-w-[95px] w-[95px]">
@@ -3600,10 +3710,18 @@ function renderLedgerTable() {
       <td class="px-4 py-3 text-center font-bold text-slate-500">${e.responseNumber}</td>
       <td class="px-4 py-3 font-semibold whitespace-nowrap">${e.date}</td>
       <td class="px-4 py-3 text-slate-400 font-semibold">${e.time}</td>
-      <td class="px-4 py-3 font-extrabold text-blue-600 dark:text-blue-400 whitespace-nowrap cursor-pointer hover:underline" onclick="viewReceiptPhotoOnDemand('ledger_receipt', '${e.responseNumber}', '${e.vehicleNo}')">
-          ${e.location && e.location.lat ? `<a href="https://www.google.com/maps/search/?api=1&query=${e.location.lat},${e.location.lng}" target="_blank" class="mr-4 text-rose-500 hover:text-rose-600 text-xl" title="View Location" onclick="event.stopPropagation();"><i class="fas fa-map-marker-alt"></i></a>` : ''}
+      <td class="px-4 py-3 whitespace-nowrap">
+        <div class="font-extrabold text-blue-600 dark:text-blue-400 cursor-pointer hover:underline inline-flex items-center" onclick="viewReceiptPhotoOnDemand('ledger_receipt', '${e.responseNumber}', '${e.vehicleNo}')">
+          ${e.location && e.location.lat ? `<a href="https://www.google.com/maps/search/?api=1&query=${e.location.lat},${e.location.lng}" target="_blank" class="mr-1 text-rose-500 hover:text-rose-600 text-base" title="View Location" onclick="event.stopPropagation();"><i class="fas fa-map-marker-alt"></i></a>` : ''}
           ${e.vehicleNo}
-        </td>
+        </div>
+        ${(dName || dMobile) ? `
+          <div class="flex items-center gap-1.5 text-[10px] mt-0.5 text-slate-400 font-normal select-none" onclick="event.stopPropagation();">
+            ${dName ? `<span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1"><i class="fas fa-user text-[8.5px] text-blue-500"></i>${dName}</span>` : ''}
+            ${dMobile ? `<span onclick="copyDriverMobileNumber('${dMobile}', event)" class="font-mono text-[9.5px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer flex items-center gap-1 active:scale-95 transition-all" title="Click to copy: ${dMobile}"><i class="fas fa-phone-alt text-[7.5px]"></i>${dMobile}<i class="fas fa-copy text-[7.5px] opacity-60"></i></span>` : ''}
+          </div>
+        ` : ''}
+      </td>
       <td class="px-4 py-3 font-medium text-slate-500">${e.vehicleType || ''}</td>
       <td class="px-4 py-3 font-medium text-slate-500 text-center">${mileageVal}</td>
       <td class="px-4 py-3 text-xs font-semibold">${e.fromLocation || ''}</td>
@@ -4325,6 +4443,15 @@ Response #${cleanPayload.responseNumber}
 👮🏻 Vendor Name. : ${cleanPayload.vendorName}${noteText}`;
 
         messages.push(msg);
+
+        if (!cleanPayload.driverName) {
+          const cleanV = String(cleanPayload.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          const regD = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanV) : null;
+          if (regD) {
+            cleanPayload.driverName = regD.name || '';
+            cleanPayload.driverMobile = regD.mobile || '';
+          }
+        }
 
         const p = entriesRef.child(cleanPayload.responseNumber).set(cleanPayload);
         promises.push(p);
@@ -5302,6 +5429,18 @@ function processData(text, attachedPhotos = null) {
     });
 
     const commitEntry = (photoPayload = {}) => {
+      // Ensure driver info is attached if not already present
+      if (!e.driverName) {
+        const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanV) : null;
+        if (matchingReq && (matchingReq.driverName || matchingReq.driverMobile)) {
+          e.driverName = matchingReq.driverName || (regDriver ? regDriver.name : '');
+          e.driverMobile = matchingReq.driverMobile || matchingReq.mobile || (regDriver ? regDriver.mobile : '');
+        } else if (regDriver) {
+          e.driverName = regDriver.name || '';
+          e.driverMobile = regDriver.mobile || '';
+        }
+      }
+
       // Strip any raw photos from ledger entry object so entries node stays ultra-lightweight
       delete e.receiptPhoto;
       delete e.receiptPhotos;
@@ -6268,11 +6407,47 @@ if (driverForm) {
     }
     
     const existing = driversList.find(d => d.key === key);
+    const history = (existing && Array.isArray(existing.history)) ? [...existing.history] : [];
+
+    // If driver details changed on update, record history and backfill past entries with old driver
+    const isDriverDetailsChanged = existing && (existing.name !== name || existing.mobile !== mobile || existing.vehicleNo !== vehicleNo);
+    if (isDriverDetailsChanged && existing.name) {
+      history.push({
+        name: existing.name,
+        mobile: existing.mobile || '',
+        vehicleNo: existing.vehicleNo || vehicleNo,
+        until: Date.now()
+      });
+
+      // Backfill and permanently stamp any past entries for existing.vehicleNo that don't have driverName set yet
+      const cleanOldVeh = String(existing.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (cleanOldVeh && typeof historyEntries !== 'undefined' && Array.isArray(historyEntries)) {
+        const entryUpdates = {};
+        historyEntries.forEach(entry => {
+          if (!entry) return;
+          const eVeh = String(entry.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (eVeh === cleanOldVeh && !entry.driverName) {
+            entry.driverName = existing.name;
+            entry.driverMobile = existing.mobile || '';
+            entryUpdates[`${entry.responseNumber}/driverName`] = existing.name;
+            if (existing.mobile) {
+              entryUpdates[`${entry.responseNumber}/driverMobile`] = existing.mobile;
+            }
+          }
+        });
+        if (Object.keys(entryUpdates).length > 0) {
+          entriesRef.update(entryUpdates).catch(e => console.warn("Backfill driver update:", e));
+          try { saveCache('rpm_cache_entries', historyEntries); } catch(e) {}
+        }
+      }
+    }
+
     const data = { 
       vehicleNo: vehicleNo || '',
       name, 
       mobile, 
       tag, 
+      history,
       createdAt: existing ? (existing.createdAt || Date.now()) : Date.now() 
     };
     if (key) {
@@ -9228,7 +9403,10 @@ function getFilteredHistoryEntries() {
 
     // 1. Local Search Query (Only compute string if query is entered)
     if (searchQuery) {
-      const dataStr = `${e.responseNumber || ''} ${e.date || ''} ${e.vehicleNo || ''} ${e.vehicleType || ''} ${e.fromLocation || ''} ${e.lastLocation || ''} ${e.vendorName || ''} ${e.note || ''}`.toLowerCase();
+      const dInfo = (typeof window.getEntryDriverInfo === 'function') ? window.getEntryDriverInfo(e) : null;
+      const dName = dInfo ? dInfo.name : (e.driverName || '');
+      const dMobile = dInfo ? dInfo.mobile : (e.driverMobile || '');
+      const dataStr = `${e.responseNumber || ''} ${e.date || ''} ${e.vehicleNo || ''} ${dName} ${dMobile} ${e.vehicleType || ''} ${e.fromLocation || ''} ${e.lastLocation || ''} ${e.vendorName || ''} ${e.note || ''}`.toLowerCase();
       if (!dataStr.includes(searchQuery)) continue;
     }
     
@@ -21626,10 +21804,11 @@ function renderDriverRequestsList() {
       `;
     }
 
-    const cleanVeh = String(r.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanVeh) : null;
-    const driverName = (regDriver && regDriver.name) || r.driverName || '';
-    const driverMobile = (regDriver && regDriver.mobile) || r.driverMobile || r.mobile || '';
+    const dInfo = (typeof window.getRequestDriverInfo === 'function')
+      ? window.getRequestDriverInfo(r)
+      : { name: r.driverName || '', mobile: r.driverMobile || r.mobile || '' };
+    const driverName = dInfo.name || '';
+    const driverMobile = dInfo.mobile || '';
 
     tr.innerHTML = `
       <td class="px-4 py-4 text-center whitespace-nowrap">
@@ -22956,6 +23135,12 @@ function approveDriverRequest(key) {
 
       const rawNote = String(req.note || '').trim().toUpperCase();
       const cleanReqNote = rawNote === 'DRIVER REQUEST' ? '' : rawNote;
+
+      const cleanVeh = String(req.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanVeh) : null;
+      const assignedDName = req.driverName || (regDriver ? regDriver.name : '');
+      const assignedDMobile = req.driverMobile || req.mobile || (regDriver ? regDriver.mobile : '');
+
       const e = {
         responseNumber: newRespNum,
         date: req.date || '',
@@ -22972,7 +23157,9 @@ function approveDriverRequest(key) {
         vendorName: String(req.vendorName || ''),
         note: cleanReqNote,
         litres: '',
-        mileage: ''
+        mileage: '',
+        driverName: assignedDName,
+        driverMobile: assignedDMobile
       };
     if (req.location) {
       e.location = req.location;
@@ -23137,6 +23324,11 @@ function directFillDriverRequest(key) {
   const rawNote = String(req.note || '').trim().toUpperCase();
   const cleanReqNote = rawNote === 'DRIVER REQUEST' ? '' : rawNote;
 
+  const cleanVeh = String(req.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanVeh) : null;
+  const assignedDName = req.driverName || (regDriver ? regDriver.name : '');
+  const assignedDMobile = req.driverMobile || req.mobile || (regDriver ? regDriver.mobile : '');
+
   const e = {
     responseNumber: newRespNum,
     date: req.date || '',
@@ -23153,7 +23345,9 @@ function directFillDriverRequest(key) {
     vendorName: String(req.vendorName || ''),
     note: cleanReqNote,
     litres: '',
-    mileage: ''
+    mileage: '',
+    driverName: assignedDName,
+    driverMobile: assignedDMobile
   };
 
   if (req.location) e.location = req.location;
@@ -23588,6 +23782,11 @@ function submitFillReceiptAction() {
   const rawNote = String(req.note || '').trim().toUpperCase();
   const cleanReqNote = rawNote === 'DRIVER REQUEST' ? '' : rawNote;
 
+  const cleanVeh = String(req.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanVeh) : null;
+  const assignedDName = req.driverName || (regDriver ? regDriver.name : '');
+  const assignedDMobile = req.driverMobile || req.mobile || (regDriver ? regDriver.mobile : '');
+
   const e = {
     responseNumber: newRespNum,
     date: req.date || '',
@@ -23605,7 +23804,9 @@ function submitFillReceiptAction() {
     note: cleanReqNote,
     litres: '',
     mileage: '',
-    hasReceiptPhoto: true
+    hasReceiptPhoto: true,
+    driverName: assignedDName,
+    driverMobile: assignedDMobile
   };
 
   if (req.location) e.location = req.location;
@@ -25239,6 +25440,12 @@ function autoApproveRequest(req, timeoutMsg = "") {
 
     const rawNote = String(req.note || '').trim().toUpperCase();
     const cleanReqNote = rawNote === 'DRIVER REQUEST' ? '' : rawNote;
+
+    const cleanVeh = String(req.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanVeh) : null;
+    const assignedDName = req.driverName || (regDriver ? regDriver.name : '');
+    const assignedDMobile = req.driverMobile || req.mobile || (regDriver ? regDriver.mobile : '');
+
     const e = {
       responseNumber: newRespNum,
       date: req.date || '',
@@ -25255,7 +25462,9 @@ function autoApproveRequest(req, timeoutMsg = "") {
       vendorName: String(req.vendorName || ''),
       note: cleanReqNote,
       litres: '',
-      mileage: ''
+      mileage: '',
+      driverName: assignedDName,
+      driverMobile: assignedDMobile
     };
     if (req.location) {
       e.location = req.location;
@@ -25908,10 +26117,11 @@ function renderDriverRequestsLogList() {
       `;
     }
 
-    const cleanVeh = String(r.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanVeh) : null;
-    const driverName = (regDriver && regDriver.name) || r.driverName || '';
-    const driverMobile = (regDriver && regDriver.mobile) || r.driverMobile || r.mobile || '';
+    const dInfo = (typeof window.getRequestDriverInfo === 'function')
+      ? window.getRequestDriverInfo(r)
+      : { name: r.driverName || '', mobile: r.driverMobile || r.mobile || '' };
+    const driverName = dInfo.name || '';
+    const driverMobile = dInfo.mobile || '';
 
     tr.innerHTML = `
       <td class="px-5 py-4">
