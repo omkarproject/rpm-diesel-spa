@@ -2074,7 +2074,14 @@ driversRef.on('value', snapshot => {
   if (val) {
     Object.entries(val).forEach(([key, item]) => {
       if (item && typeof item === 'object' && item.name) {
-        driversList.push({ name: item.name, mobile: item.mobile, tag: item.tag || '', key: key, createdAt: item.createdAt || Date.now() });
+        driversList.push({ 
+          vehicleNo: item.vehicleNo || '',
+          name: item.name, 
+          mobile: item.mobile, 
+          tag: item.tag || '', 
+          key: key, 
+          createdAt: item.createdAt || Date.now() 
+        });
         driverKeysMap[item.name.toUpperCase()] = key;
       }
     });
@@ -2086,6 +2093,9 @@ driversRef.on('value', snapshot => {
   
   renderDriversGrid();
   refreshActiveSection();
+  if (typeof window.updateAllVehicleDriverBadges === 'function') {
+    window.updateAllVehicleDriverBadges();
+  }
 }, error => {
   isDriversLoading = false;
   console.error("Firebase drivers read failed:", error);
@@ -6242,19 +6252,21 @@ if (driverForm) {
     e.preventDefault();
     if (!checkAuth()) return;
     const key = document.getElementById('driver-edit-key').value;
+    const vehicleNo = (document.getElementById('driver-vehicle-input')?.value || '').trim().toUpperCase();
     const name = document.getElementById('driver-name-input').value.trim().toUpperCase();
     const mobile = document.getElementById('driver-mobile-input').value.trim();
     const tag = document.getElementById('driver-tag-input').value.trim();
     
     if (!name || !mobile) return;
     
-    // Check duplication on create
+    // Check duplication on create (by name)
     if (!key && driversList.some(d => d.name === name)) {
       return toast.err("Driver already configured.");
     }
     
     const existing = driversList.find(d => d.key === key);
     const data = { 
+      vehicleNo: vehicleNo || '',
       name, 
       mobile, 
       tag, 
@@ -6278,6 +6290,8 @@ if (driverForm) {
 
 function resetDriverForm() {
   document.getElementById('driver-edit-key').value = '';
+  const vInput = document.getElementById('driver-vehicle-input');
+  if (vInput) vInput.value = '';
   document.getElementById('driver-name-input').value = '';
   document.getElementById('driver-mobile-input').value = '';
   document.getElementById('driver-tag-input').value = '';
@@ -6291,17 +6305,20 @@ function renderDriversGrid() {
   if (!tbody) return;
   tbody.innerHTML = '';
   
-  const search = document.getElementById('driver-search').value.toLowerCase();
+  const search = (document.getElementById('driver-search')?.value || '').toLowerCase();
   
   const filtered = driversList.filter(d => 
-    d.name.toLowerCase().includes(search) || d.mobile.includes(search) || d.tag.toLowerCase().includes(search)
+    (d.vehicleNo && d.vehicleNo.toLowerCase().includes(search)) ||
+    d.name.toLowerCase().includes(search) || 
+    d.mobile.includes(search) || 
+    (d.tag && d.tag.toLowerCase().includes(search))
   );
 
   if (filtered.length === 0) {
     if (isDriversLoading) {
-      tbody.innerHTML = getLoadingSkeletonHTML(4, 3);
+      tbody.innerHTML = getLoadingSkeletonHTML(5, 3);
     } else {
-      tbody.innerHTML = `<tr><td colspan="4" class="text-center py-6 text-slate-400">No matching drivers registered.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center py-6 text-slate-400">No matching drivers registered.</td></tr>`;
     }
     return;
   }
@@ -6316,15 +6333,20 @@ function renderDriversGrid() {
     }
     const tagBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${tagClass}">${statusTag || 'GREEN'}</span>`;
 
+    const vehicleDisplay = d.vehicleNo 
+      ? `<span class="font-mono font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/50 px-2.5 py-0.5 rounded-lg text-xs">${d.vehicleNo}</span>` 
+      : `<span class="text-slate-400 italic text-xs">--</span>`;
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td class="px-3 py-2.5">${vehicleDisplay}</td>
       <td class="px-3 py-2.5 font-bold text-slate-800 dark:text-slate-200">${d.name}</td>
       <td class="px-3 py-2.5 font-mono">${d.mobile}</td>
       <td class="px-3 py-2.5 text-xs">${tagBadge}</td>
       <td class="px-3 py-2.5 text-center">
         <div class="flex justify-center gap-2">
-          <button onclick="editDriver('${d.key}', '${d.name}', '${d.mobile}', '${d.tag}')" class="p-1 hover:bg-blue-500/10 text-blue-600 rounded"><i class="fas fa-edit"></i></button>
-          <button onclick="deleteDriver('${d.key}', '${d.name}')" class="p-1 hover:bg-red-500/10 text-red-500 rounded"><i class="fas fa-trash"></i></button>
+          <button onclick="editDriver('${d.key}', '${d.vehicleNo || ''}', '${d.name}', '${d.mobile}', '${d.tag}')" class="p-1 hover:bg-blue-500/10 text-blue-600 rounded" title="Edit"><i class="fas fa-edit"></i></button>
+          <button onclick="deleteDriver('${d.key}', '${d.name}')" class="p-1 hover:bg-red-500/10 text-red-500 rounded" title="Delete"><i class="fas fa-trash"></i></button>
         </div>
       </td>
     `;
@@ -6332,8 +6354,10 @@ function renderDriversGrid() {
   });
 }
 
-window.editDriver = (key, name, mobile, tag) => {
+window.editDriver = (key, vehicleNo, name, mobile, tag) => {
   document.getElementById('driver-edit-key').value = key;
+  const vInput = document.getElementById('driver-vehicle-input');
+  if (vInput) vInput.value = (vehicleNo === 'null' || vehicleNo === 'undefined') ? '' : vehicleNo;
   document.getElementById('driver-name-input').value = name;
   document.getElementById('driver-mobile-input').value = mobile;
   document.getElementById('driver-tag-input').value = tag === 'null' || tag === 'undefined' ? '' : tag;
@@ -6361,6 +6385,71 @@ window.clearAllDrivers = () => {
       .catch(err => toast.err("Failed to clear drivers: " + err.message));
   }
 };
+
+// Helper to look up assigned driver by vehicle number across admin forms
+window.findDriverForVehicle = function(vehicleNo) {
+  if (!vehicleNo || !Array.isArray(driversList)) return null;
+  const clean = String(vehicleNo).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!clean) return null;
+  const found = driversList.find(d => {
+    if (!d || !d.vehicleNo) return false;
+    const vClean = String(d.vehicleNo).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return vClean === clean;
+  });
+  return found ? found.name : null;
+};
+
+window.updateVehicleDriverBadge = function(inputEl, badgeEl, nameEl) {
+  if (!inputEl || !badgeEl || !nameEl) return;
+  const val = inputEl.value.trim();
+  const driverName = window.findDriverForVehicle(val);
+  if (driverName) {
+    nameEl.textContent = driverName;
+    badgeEl.classList.remove('hidden');
+    badgeEl.classList.add('flex');
+  } else {
+    nameEl.textContent = '';
+    badgeEl.classList.add('hidden');
+    badgeEl.classList.remove('flex');
+  }
+};
+
+window.updateAllVehicleDriverBadges = function() {
+  window.updateVehicleDriverBadge(
+    document.getElementById('calc-vehicle'),
+    document.getElementById('calc-vehicle-driver-badge'),
+    document.getElementById('calc-vehicle-driver-name')
+  );
+  window.updateVehicleDriverBadge(
+    document.getElementById('drf-vehicle'),
+    document.getElementById('drf-vehicle-driver-badge'),
+    document.getElementById('drf-vehicle-driver-name')
+  );
+  window.updateVehicleDriverBadge(
+    document.getElementById('admin-gen-veh-no'),
+    document.getElementById('admin-gen-driver-badge'),
+    document.getElementById('admin-gen-driver-badge-name')
+  );
+};
+
+// Wire up event listeners for inputs
+['calc-vehicle', 'drf-vehicle', 'admin-gen-veh-no'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) {
+    const handler = () => {
+      window.updateAllVehicleDriverBadges();
+      if (id === 'admin-gen-veh-no') {
+        const driverName = window.findDriverForVehicle(el.value);
+        const nameInput = document.getElementById('admin-gen-driver-name');
+        if (driverName && nameInput && !nameInput.value.trim()) {
+          nameInput.value = driverName;
+        }
+      }
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+  }
+});
 
 // 13C. EMPLOYEES CONFIG
 const employeeForm = document.getElementById('employee-config-form');

@@ -823,7 +823,13 @@
 
         <!-- Vehicle No Split inputs -->
         <div>
-          <label class="calc-label">Vehicle No <span class="text-red-500">*</span></label>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="calc-label mb-0" style="margin-bottom:0;">Vehicle No <span class="text-red-500">*</span></label>
+            <div id="driver-assigned-badge" class="hidden text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 items-center gap-1.5 shadow-xs">
+              <i class="fas fa-user-check text-emerald-600 text-[10px]"></i>
+              <span id="driver-assigned-name"></span>
+            </div>
+          </div>
           <div class="grid grid-cols-4 gap-2">
             <input type="text" id="req-vehicle-state" value="MH" maxLength="2" class="calc-input text-center uppercase" placeholder="MH" required autocomplete="nope" autocorrect="off" autocapitalize="none" spellcheck="false">
             <input type="text" id="req-vehicle-district" maxLength="2" class="calc-input text-center uppercase" placeholder="12" required autocomplete="nope" autocorrect="off" autocapitalize="none" spellcheck="false" inputmode="numeric" pattern="[0-9]*">
@@ -972,6 +978,24 @@
     db.ref('config/driver_request_whatsapp_slots').on('value', snapshot => {
       const val = snapshot.val();
       driverRequestWhatsAppSlots = Array.isArray(val) ? val : (val ? Object.values(val) : []);
+    });
+
+    // Registered drivers sync (config/drivers) to show driver name next to vehicle no
+    let registeredDriversMap = {};
+    db.ref('config/drivers').on('value', snapshot => {
+      const data = snapshot.val() || {};
+      registeredDriversMap = {};
+      Object.values(data).forEach(driver => {
+        if (driver && driver.vehicleNo && driver.name) {
+          const cleanVeh = String(driver.vehicleNo).toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (cleanVeh) {
+            registeredDriversMap[cleanVeh] = driver.name;
+          }
+        }
+      });
+      if (typeof updateAssignedDriverBadge === 'function') {
+        updateAssignedDriverBadge();
+      }
     });
 
     // Helper to get active destination WhatsApp number based on current time slot
@@ -1355,6 +1379,7 @@
       setAutofillLock('req-vtype', false);
       setAutofillLock('req-vendor', false);
       lastLiveLoadedVehicle = '';
+      if (typeof updateAssignedDriverBadge === 'function') updateAssignedDriverBadge();
     }
     setDefaults();
 
@@ -3230,6 +3255,31 @@
       if (typeof calculateVoucherDueAmount === 'function') calculateVoucherDueAmount();
     }
 
+    // Helper to display registered driver name next to Vehicle No label
+    function updateAssignedDriverBadge() {
+      const badge = document.getElementById('driver-assigned-badge');
+      const nameSpan = document.getElementById('driver-assigned-name');
+      if (!badge || !nameSpan) return;
+
+      const s = (document.getElementById('req-vehicle-state')?.value || '').trim().toUpperCase();
+      const d = (document.getElementById('req-vehicle-district')?.value || '').trim();
+      const ser = (document.getElementById('req-vehicle-series')?.value || '').trim().toUpperCase();
+      const n = (document.getElementById('req-vehicle-number')?.value || '').trim();
+      
+      const fullVeh = (s + d + ser + n).replace(/[^A-Z0-9]/g, '');
+      const driverName = (fullVeh && registeredDriversMap) ? registeredDriversMap[fullVeh] : null;
+
+      if (driverName) {
+        nameSpan.textContent = driverName;
+        badge.classList.remove('hidden');
+        badge.classList.add('flex');
+      } else {
+        nameSpan.textContent = '';
+        badge.classList.add('hidden');
+        badge.classList.remove('flex');
+      }
+    }
+
     // Helper to check if vehicle split inputs form a complete vehicle number
     function getCompleteVehicleNo() {
       const s = (document.getElementById('req-vehicle-state')?.value || '').trim().toUpperCase();
@@ -3245,6 +3295,7 @@
     }
 
     function checkAndTriggerVehicleLiveSync(force) {
+      updateAssignedDriverBadge();
       const fullVeh = getCompleteVehicleNo();
       if (fullVeh) {
         // Only fetch when vehicle actually changes (never re-fetch on blur when typing current KM!)
@@ -3295,11 +3346,18 @@
         if (input.value.length >= input.maxLength && index < vehicleInputs.length - 1) {
           vehicleInputs[index + 1].focus();
         }
+        updateAssignedDriverBadge();
         checkAndTriggerVehicleLiveSync(false);
       });
 
-      input.addEventListener('change', () => checkAndTriggerVehicleLiveSync(false));
-      input.addEventListener('blur', () => checkAndTriggerVehicleLiveSync(false));
+      input.addEventListener('change', () => {
+        updateAssignedDriverBadge();
+        checkAndTriggerVehicleLiveSync(false);
+      });
+      input.addEventListener('blur', () => {
+        updateAssignedDriverBadge();
+        checkAndTriggerVehicleLiveSync(false);
+      });
 
       input.addEventListener('keydown', e => {
         if (e.key === 'Backspace' && input.value.length === 0 && index > 0) {

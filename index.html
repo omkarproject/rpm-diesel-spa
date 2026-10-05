@@ -1287,6 +1287,10 @@
               <form id="driver-config-form" class="space-y-4">
                 <input type="hidden" id="driver-edit-key">
                 <div>
+                  <label class="calc-label" for="driver-vehicle-input">🚛 Assigned Vehicle No</label>
+                  <input type="text" id="driver-vehicle-input" class="calc-input uppercase" placeholder="e.g. MH 04 JU 7828">
+                </div>
+                <div>
                   <label class="calc-label" for="driver-name-input">👤 Driver Full Name</label>
                   <input type="text" id="driver-name-input" class="calc-input" placeholder="e.g. RAMESH PRASAD" required>
                 </div>
@@ -1294,12 +1298,14 @@
                   <label class="calc-label" for="driver-mobile-input">📞 Mobile Number</label>
                   <input type="tel" id="driver-mobile-input" class="calc-input" placeholder="e.g. 9876543210" required>
                 </div>
+                <div>
                   <label class="calc-label" for="driver-tag-input">🏷️ Driver Tag (Status)</label>
                   <select id="driver-tag-input" class="calc-input py-2 text-xs flex-grow">
                     <option value="GREEN" selected>GREEN (Good/Safe)</option>
                     <option value="YELLOW">YELLOW (Warning/Watch)</option>
                     <option value="RED">RED (Restricted/Blocked)</option>
                   </select>
+                </div>
                 <div class="flex gap-2">
                   <button type="submit" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition-all" id="driver-submit-btn">
                     Save Driver
@@ -1319,7 +1325,7 @@
                   <p class="text-[10px] text-slate-400 mt-0.5">Search or edit verified operational drivers</p>
                 </div>
                 <div class="flex items-center gap-2">
-                  <input type="text" id="driver-search" class="calc-input py-1 px-3 text-xs w-44" placeholder="Search driver...">
+                  <input type="text" id="driver-search" class="calc-input py-1 px-3 text-xs w-44" placeholder="Search driver or vehicle...">
                   <button onclick="clearAllDrivers()" class="btn px-2.5 py-1 text-red-500 hover:bg-red-500/10 text-xs font-bold rounded-lg border border-red-500/20">Clear All</button>
                 </div>
               </div>
@@ -1328,6 +1334,7 @@
                 <table class="w-full text-left border-collapse premium-table">
                   <thead>
                     <tr>
+                      <th class="px-3 py-2.5">Vehicle No</th>
                       <th class="px-3 py-2.5">Driver Name</th>
                       <th class="px-3 py-2.5">Mobile Contact</th>
                       <th class="px-3 py-2.5">Tag Code</th>
@@ -1336,7 +1343,7 @@
                   </thead>
                   <tbody id="driver-config-table-body">
                     <tr>
-                      <td colspan="4" class="text-center py-10 text-slate-400 font-semibold">Loading drivers...</td>
+                      <td colspan="5" class="text-center py-10 text-slate-400 font-semibold">Loading drivers...</td>
                     </tr>
                   </tbody>
                 </table>
@@ -4170,7 +4177,13 @@
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <label class="calc-label" for="calc-vehicle">🚛 Vehicle No</label>
+                <div class="flex items-center justify-between mb-1">
+                  <label class="calc-label mb-0" for="calc-vehicle" style="margin-bottom:0;">🚛 Vehicle No</label>
+                  <span id="calc-vehicle-driver-badge" class="hidden text-xs font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 items-center gap-1 shadow-xs">
+                    <i class="fas fa-user-check text-emerald-600 dark:text-emerald-400 text-[10px]"></i>
+                    <span id="calc-vehicle-driver-name"></span>
+                  </span>
+                </div>
                 <input type="text" id="calc-vehicle" list="calc-vehicle-list" class="calc-input" placeholder="Search or select vehicle...">
                 <datalist id="calc-vehicle-list"></datalist>
               </div>
@@ -4590,7 +4603,13 @@
           <!-- Row 2: Vehicle No, Vehicle Type -->
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="calc-label" for="drf-vehicle">🚛 Vehicle No</label>
+              <div class="flex items-center justify-between mb-1">
+                <label class="calc-label mb-0" for="drf-vehicle" style="margin-bottom:0;">🚛 Vehicle No</label>
+                <span id="drf-vehicle-driver-badge" class="hidden text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 items-center gap-1 shadow-xs">
+                  <i class="fas fa-user-check text-emerald-600 dark:text-emerald-400 text-[10px]"></i>
+                  <span id="drf-vehicle-driver-name"></span>
+                </span>
+              </div>
               <div class="relative">
                 <input type="text" id="drf-vehicle" list="drf-vehicle-list" class="calc-input uppercase pr-8" placeholder="E.G. MH04LY4604" required>
                 <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center">
@@ -6089,9 +6108,15 @@
       <div id="admin-gen-form-view" class="p-5 space-y-4 overflow-y-auto max-h-[75vh]">
         <!-- Vehicle No -->
         <div>
-          <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1" for="admin-gen-veh-no">
-            Vehicle No <span class="text-rose-500">*</span>
-          </label>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-0" for="admin-gen-veh-no">
+              Vehicle No <span class="text-rose-500">*</span>
+            </label>
+            <span id="admin-gen-driver-badge" class="hidden text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 items-center gap-1 shadow-xs">
+              <i class="fas fa-user-check text-emerald-600 dark:text-emerald-400 text-[10px]"></i>
+              <span id="admin-gen-driver-badge-name"></span>
+            </span>
+          </div>
           <div class="relative">
             <input type="text" id="admin-gen-veh-no" class="calc-input uppercase font-mono tracking-wider font-extrabold w-full text-sm pl-9" placeholder="e.g. DL01AB1234" list="admin-gen-vehicles-datalist" autocomplete="off" oninput="this.value = this.value.toUpperCase()">
             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
@@ -6980,7 +7005,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=132" defer></script>
+  <script src="script.js?v=133" defer></script>
   <script src="broadcast.js?v=5" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
