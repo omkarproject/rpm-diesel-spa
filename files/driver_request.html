@@ -989,7 +989,11 @@
         if (driver && driver.vehicleNo && driver.name) {
           const cleanVeh = String(driver.vehicleNo).toUpperCase().replace(/[^A-Z0-9]/g, '');
           if (cleanVeh) {
-            registeredDriversMap[cleanVeh] = driver.name;
+            registeredDriversMap[cleanVeh] = {
+              name: driver.name,
+              mobile: driver.mobile || '',
+              tag: driver.tag || ''
+            };
           }
         }
       });
@@ -3267,7 +3271,8 @@
       const n = (document.getElementById('req-vehicle-number')?.value || '').trim();
       
       const fullVeh = (s + d + ser + n).replace(/[^A-Z0-9]/g, '');
-      const driverName = (fullVeh && registeredDriversMap) ? registeredDriversMap[fullVeh] : null;
+      const driverObj = (fullVeh && registeredDriversMap) ? registeredDriversMap[fullVeh] : null;
+      const driverName = driverObj ? (typeof driverObj === 'object' ? driverObj.name : driverObj) : null;
 
       if (driverName) {
         nameSpan.textContent = driverName;
@@ -3978,6 +3983,14 @@ function closeDueBreakdownModal() {
       };
       if (currentCoords) {
         payload.location = currentCoords;
+      }
+
+      // Attach assigned driver info if registered
+      const cleanSubVeh = String(vehicle || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const assignedDriver = (cleanSubVeh && registeredDriversMap) ? registeredDriversMap[cleanSubVeh] : null;
+      if (assignedDriver && assignedDriver.name) {
+        payload.driverName = assignedDriver.name;
+        if (assignedDriver.mobile) payload.driverMobile = assignedDriver.mobile;
       }
 
       // Always resolve a mileage: config average -> vehicle history -> default.

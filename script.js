@@ -2096,6 +2096,9 @@ driversRef.on('value', snapshot => {
   if (typeof window.updateAllVehicleDriverBadges === 'function') {
     window.updateAllVehicleDriverBadges();
   }
+  if (typeof renderDriverRequestsList === 'function' && typeof activeSection !== 'undefined' && activeSection === 'driver-requests') {
+    renderDriverRequestsList();
+  }
 }, error => {
   isDriversLoading = false;
   console.error("Firebase drivers read failed:", error);
@@ -6387,7 +6390,7 @@ window.clearAllDrivers = () => {
 };
 
 // Helper to look up assigned driver by vehicle number across admin forms
-window.findDriverForVehicle = function(vehicleNo) {
+window.getDriverDetailsForVehicle = function(vehicleNo) {
   if (!vehicleNo || !Array.isArray(driversList)) return null;
   const clean = String(vehicleNo).toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!clean) return null;
@@ -6396,7 +6399,12 @@ window.findDriverForVehicle = function(vehicleNo) {
     const vClean = String(d.vehicleNo).toUpperCase().replace(/[^A-Z0-9]/g, '');
     return vClean === clean;
   });
-  return found ? found.name : null;
+  return found ? { name: found.name, mobile: found.mobile, tag: found.tag } : null;
+};
+
+window.findDriverForVehicle = function(vehicleNo) {
+  const d = window.getDriverDetailsForVehicle(vehicleNo);
+  return d ? d.name : null;
 };
 
 window.updateVehicleDriverBadge = function(inputEl, badgeEl, nameEl) {
@@ -21549,6 +21557,11 @@ function renderDriverRequestsList() {
       `;
     }
 
+    const cleanVeh = String(r.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanVeh) : null;
+    const driverName = (regDriver && regDriver.name) || r.driverName || '';
+    const driverMobile = (regDriver && regDriver.mobile) || r.driverMobile || r.mobile || '';
+
     tr.innerHTML = `
       <td class="px-4 py-4 text-center whitespace-nowrap">
         <div class="inline-flex items-center justify-center gap-1.5">
@@ -21575,6 +21588,13 @@ function renderDriverRequestsList() {
           ` : ''}
         </div>
         <div class="text-[10px] font-bold text-slate-400 uppercase mt-0.5">${r.vehicleType || 'Unknown'}</div>
+        ${(driverName || driverMobile) ? `
+          <div class="flex items-center gap-1.5 text-[10px] mt-1 text-slate-400">
+            ${driverName ? `<span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1"><i class="fas fa-user text-[8.5px] text-blue-500"></i>${driverName}</span>` : ''}
+            ${(driverName && driverMobile) ? `<span class="text-slate-500 opacity-60">•</span>` : ''}
+            ${driverMobile ? `<a href="tel:${driverMobile}" class="font-mono text-[9.5px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5" onclick="event.stopPropagation();"><i class="fas fa-phone-alt text-[7.5px]"></i>${driverMobile}</a>` : ''}
+          </div>
+        ` : ''}
         ${r.status === 'rejected' && (r.rejectReason || r.rejectedReason || r.reason) ? `
           <div class="text-[10px] font-extrabold text-rose-500 dark:text-rose-400 mt-1 flex items-center gap-1">
             <i class="fas fa-circle-exclamation text-[9px]"></i> Reason: ${r.rejectReason || r.rejectedReason || r.reason}
@@ -25786,6 +25806,11 @@ function renderDriverRequestsLogList() {
       `;
     }
 
+    const cleanVeh = String(r.vehicleNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const regDriver = window.getDriverDetailsForVehicle ? window.getDriverDetailsForVehicle(cleanVeh) : null;
+    const driverName = (regDriver && regDriver.name) || r.driverName || '';
+    const driverMobile = (regDriver && regDriver.mobile) || r.driverMobile || r.mobile || '';
+
     tr.innerHTML = `
       <td class="px-5 py-4">
         <div class="font-bold text-slate-850 dark:text-white">${r.date || '-'}</div>
@@ -25800,6 +25825,13 @@ function renderDriverRequestsLogList() {
           ${newTagHtml}
         </div>
         <div class="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">${r.vehicleType || '-'}</div>
+        ${(driverName || driverMobile) ? `
+          <div class="flex items-center gap-1.5 text-[10px] mt-1 text-slate-400">
+            ${driverName ? `<span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1"><i class="fas fa-user text-[8.5px] text-blue-500"></i>${driverName}</span>` : ''}
+            ${(driverName && driverMobile) ? `<span class="text-slate-500 opacity-60">•</span>` : ''}
+            ${driverMobile ? `<a href="tel:${driverMobile}" class="font-mono text-[9.5px] font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5" onclick="event.stopPropagation();"><i class="fas fa-phone-alt text-[7.5px]"></i>${driverMobile}</a>` : ''}
+          </div>
+        ` : ''}
         ${r.status === 'rejected' && (r.rejectReason || r.rejectedReason || r.reason) ? `
           <div class="text-[10px] font-extrabold text-rose-500 dark:text-rose-400 mt-1 flex items-center gap-1">
             <i class="fas fa-circle-exclamation text-[9px]"></i> Reason: ${r.rejectReason || r.rejectedReason || r.reason}
