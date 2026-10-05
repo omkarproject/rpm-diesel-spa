@@ -1,4 +1,7 @@
 
+// High-performance Date string parsing cache initialized globally at top of script
+var _dateStrParseCache = new Map();
+
 // Geolocation map icon helper
 function getLocationIconHtml(locationObj) {
   if (locationObj && locationObj.lat && locationObj.lng) {
@@ -14200,9 +14203,14 @@ window.isEntryExcluded = isEntryExcluded;
 window.getEntryUniqueKey = getEntryUniqueKey;
 
 // High-performance Date string parsing with fast cache
-const _dateStrParseCache = new Map();
+if (typeof _dateStrParseCache === 'undefined' || !_dateStrParseCache) {
+  var _dateStrParseCache = new Map();
+}
 function parseDateStr(str) {
   if (!str) return null;
+  if (typeof _dateStrParseCache === 'undefined' || !_dateStrParseCache) {
+    _dateStrParseCache = new Map();
+  }
   
   // Handle numeric timestamp or digit string (e.g. 1784013298911)
   if (typeof str === 'number' || (typeof str === 'string' && /^\d{10,13}$/.test(str.trim()))) {
