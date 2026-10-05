@@ -5861,63 +5861,72 @@ function formatImportDate(rawDate) {
 }
 
 // Urea Excel Export (Matches UI headers: Sr No | Response # | Date | Vehicle No | V Type | Avg | S Km | E Km | Total k/m | Amount | Note)
-document.getElementById('urea-excel-export-btn').onclick = () => {
-  if (ureaEntriesList.length === 0) return toast.warn("No Urea entries to export.");
-  try {
-    const dataToExport = ureaEntriesList.map((e, index) => {
-      let mileageVal = (e.mileage && typeof e.mileage !== 'object') ? String(e.mileage) : '';
-      if (!mileageVal && e.vehicleType && vehicleTypes[e.vehicleType.toUpperCase()] !== undefined) {
-        mileageVal = String(vehicleTypes[e.vehicleType.toUpperCase()]);
-      }
-      let sKm = (e.currentKm && parseInt(e.currentKm) !== 1 && parseInt(e.currentKm) !== 0 && !isNaN(parseInt(e.currentKm))) ? String(parseInt(e.currentKm)) : '';
+const ureaExportBtn = document.getElementById('urea-excel-export-btn');
+if (ureaExportBtn) {
+  ureaExportBtn.onclick = () => {
+    if (ureaEntriesList.length === 0) return toast.warn("No Urea entries to export.");
+    try {
+      const dataToExport = ureaEntriesList.map((e, index) => {
+        let mileageVal = (e.mileage && typeof e.mileage !== 'object') ? String(e.mileage) : '';
+        if (!mileageVal && e.vehicleType && vehicleTypes[e.vehicleType.toUpperCase()] !== undefined) {
+          mileageVal = String(vehicleTypes[e.vehicleType.toUpperCase()]);
+        }
+        let sKm = (e.currentKm && parseInt(e.currentKm) !== 1 && parseInt(e.currentKm) !== 0 && !isNaN(parseInt(e.currentKm))) ? String(parseInt(e.currentKm)) : '';
 
-      return {
-        'Sr No': index + 1,
-        'Response #': e.responseNumber || '',
-        'Date': e.date || '',
-        'Vehicle No': e.vehicleNo || '',
-        'V Type': e.vehicleType || '',
-        'Avg': mileageVal,
-        'S Km': sKm,
-        'E Km': e.endKm || '',
-        'Total k/m': e.totalKm || '',
-        'Amount': e.dieselAmount ? parseFloat(e.dieselAmount) : '',
-        'Note': (e.note && String(e.note).trim().toUpperCase() !== 'DRIVER REQUEST') ? e.note : ''
-      };
-    });
-    
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    ws['!cols'] = [
-      { wch: 8 },  // Sr No
-      { wch: 14 }, // Response #
-      { wch: 14 }, // Date
-      { wch: 16 }, // Vehicle No
-      { wch: 12 }, // V Type
-      { wch: 8 },  // Avg
-      { wch: 12 }, // S Km
-      { wch: 12 }, // E Km
-      { wch: 12 }, // Total k/m
-      { wch: 12 }, // Amount
-      { wch: 30 }  // Note
-    ];
+        return {
+          'Sr No': index + 1,
+          'Response #': e.responseNumber || '',
+          'Date': e.date || '',
+          'Vehicle No': e.vehicleNo || '',
+          'V Type': e.vehicleType || '',
+          'Avg': mileageVal,
+          'S Km': sKm,
+          'E Km': e.endKm || '',
+          'Total k/m': e.totalKm || '',
+          'Amount': e.dieselAmount ? parseFloat(e.dieselAmount) : '',
+          'Note': (e.note && String(e.note).trim().toUpperCase() !== 'DRIVER REQUEST') ? e.note : ''
+        };
+      });
+      
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      ws['!cols'] = [
+        { wch: 8 },  // Sr No
+        { wch: 14 }, // Response #
+        { wch: 14 }, // Date
+        { wch: 16 }, // Vehicle No
+        { wch: 12 }, // V Type
+        { wch: 8 },  // Avg
+        { wch: 12 }, // S Km
+        { wch: 12 }, // E Km
+        { wch: 12 }, // Total k/m
+        { wch: 12 }, // Amount
+        { wch: 30 }  // Note
+      ];
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Urea Request History");
-    const filename = `Urea_Request_History_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(wb, filename);
-    toast.ok("Urea history exported to Excel!");
-  } catch (err) {
-    toast.err("Excel Export Error: " + err.message);
-  }
-};
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Urea Request History");
+      const filename = `Urea_Request_History_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      toast.ok("Urea history exported to Excel!");
+    } catch (err) {
+      toast.err("Excel Export Error: " + err.message);
+    }
+  };
+}
 
 // Urea Excel Import trigger
-document.getElementById('urea-excel-import-btn').onclick = () => {
-  document.getElementById('urea-excel-import-file').click();
-};
+const ureaImportBtn = document.getElementById('urea-excel-import-btn');
+if (ureaImportBtn) {
+  ureaImportBtn.onclick = () => {
+    const importFileInput = document.getElementById('urea-excel-import-file');
+    if (importFileInput) importFileInput.click();
+  };
+}
 
 // Urea Excel Import handler
-document.getElementById('urea-excel-import-file').onchange = (event) => {
+const ureaImportFileInput = document.getElementById('urea-excel-import-file');
+if (ureaImportFileInput) {
+  ureaImportFileInput.onchange = (event) => {
   const file = event.target.files[0];
   if (!file) return;
   
@@ -6031,7 +6040,8 @@ document.getElementById('urea-excel-import-file').onchange = (event) => {
     }
   };
   reader.readAsArrayBuffer(file);
-};
+  };
+}
 
 // Auto-fill E KM for same vehicle entries
 // Logic: sort each vehicle's entries by responseNumber ascending (oldest first)
@@ -6091,7 +6101,9 @@ function autoFillUreaEndKm() {
 window.autoFillUreaEndKm = autoFillUreaEndKm;
 
 // Clear Urea History
-document.getElementById('urea-clear-all-btn').onclick = () => {
+const ureaClearBtn = document.getElementById('urea-clear-all-btn');
+if (ureaClearBtn) {
+  ureaClearBtn.onclick = () => {
   if (!checkAuth()) return;
   const pass = prompt('Urea history clear hoga!\nEnter password:');
   if (pass === '@RPM@2026@') {
@@ -6107,7 +6119,8 @@ document.getElementById('urea-clear-all-btn').onclick = () => {
   } else if (pass !== null) {
     toast.err("Incorrect authorization password.");
   }
-};
+  };
+}
 
 /* ══════════════════════════════════════════════════════════
    13. CONFIGURATION TABLES CRUD (VEHICLES, DRIVERS, EMPLOYEES)
@@ -6483,7 +6496,8 @@ window.clearAllEmployees = () => {
 const openLocationBtn = document.getElementById('location-config-btn');
 const locModal = document.getElementById('location-modal');
 if (openLocationBtn) openLocationBtn.onclick = () => { locModal.classList.remove('hidden'); renderLocationsGrid(); };
-document.getElementById('close-location-modal').onclick = () => locModal.classList.add('hidden');
+const closeLocModalBtn = document.getElementById('close-location-modal');
+if (closeLocModalBtn) closeLocModalBtn.onclick = () => { if (locModal) locModal.classList.add('hidden'); };
 
 const locForm = document.getElementById('location-config-form');
 if (locForm) {
@@ -6595,7 +6609,8 @@ function populateDrfLocationDatalists() {
 const openVendorBtn = document.getElementById('vendor-config-btn');
 const vendorModal = document.getElementById('v-vendor-modal');
 if (openVendorBtn) openVendorBtn.onclick = () => { vendorModal.classList.remove('hidden'); renderVendorsGrid(); };
-document.getElementById('close-v-vendor-modal').onclick = () => vendorModal.classList.add('hidden');
+const closeVendorModalBtn = document.getElementById('close-v-vendor-modal');
+if (closeVendorModalBtn) closeVendorModalBtn.onclick = () => { if (vendorModal) vendorModal.classList.add('hidden'); };
 
 const vendorForm = document.getElementById('vendor-config-form');
 if (vendorForm) {
@@ -9272,7 +9287,8 @@ window.triggerDbRestore = () => {
   document.getElementById('db-restore-file').click();
 };
 
-document.getElementById('dm-passcode-cancel').onclick = () => showDmPanel('dm-options-panel');
+const dmPassCancelBtn = document.getElementById('dm-passcode-cancel');
+if (dmPassCancelBtn) dmPassCancelBtn.onclick = () => showDmPanel('dm-options-panel');
 
 let wrongAttempts = parseInt(localStorage.getItem('db_update_attempts') || '0');
 let lockoutInterval = null;
@@ -9322,119 +9338,137 @@ const runLockoutCountdown = () => {
   }
 };
 
-document.getElementById('dm-passcode-submit').onclick = () => {
-  const pwdInput = document.getElementById('dm-admin-password');
-  if (!pwdInput) return;
-  const val = pwdInput.value;
+const dmPassSubmitBtn = document.getElementById('dm-passcode-submit');
+if (dmPassSubmitBtn) {
+  dmPassSubmitBtn.onclick = () => {
+    const pwdInput = document.getElementById('dm-admin-password');
+    if (!pwdInput) return;
+    const val = pwdInput.value;
 
-  if (val === '@RPM@2026@') {
-    localStorage.removeItem('db_update_attempts');
-    wrongAttempts = 0;
-    pwdInput.value = '';
+    if (val === '@RPM@2026@') {
+      localStorage.removeItem('db_update_attempts');
+      wrongAttempts = 0;
+      pwdInput.value = '';
 
-    toast.ok("Settings edit lock unlocked.");
+      toast.ok("Settings edit lock unlocked.");
 
-    if (currentSettingsTarget === 'wipe') {
-      showDmPanel('dm-remove-all-panel');
+      if (currentSettingsTarget === 'wipe') {
+        showDmPanel('dm-remove-all-panel');
+      } else {
+        // Unlocked! Populate credentials panel
+        showDmPanel('dm-update-panel');
+        
+        const apiKeyEl = document.getElementById('dm-api-key');
+        if (apiKeyEl) apiKeyEl.value = firebaseConfig.apiKey || '';
+        const authDomainEl = document.getElementById('dm-auth-domain');
+        if (authDomainEl) authDomainEl.value = firebaseConfig.authDomain || '';
+        const dbUrlEl = document.getElementById('dm-db-url');
+        if (dbUrlEl) dbUrlEl.value = firebaseConfig.databaseURL || '';
+        const projIdEl = document.getElementById('dm-project-id');
+        if (projIdEl) projIdEl.value = firebaseConfig.projectId || '';
+        const storeEl = document.getElementById('dm-storage-bucket');
+        if (storeEl) storeEl.value = firebaseConfig.storageBucket || '';
+        const senderEl = document.getElementById('dm-sender-id');
+        if (senderEl) senderEl.value = firebaseConfig.messagingSenderId || '';
+        const appIdEl = document.getElementById('dm-app-id');
+        if (appIdEl) appIdEl.value = firebaseConfig.appId || '';
+
+        appConfigUrlRef.once('value').then(snap => {
+          const appLinkEl = document.getElementById('dm-app-link');
+          if (appLinkEl) appLinkEl.value = snap.val() || 'https://rpm.gt.tc/driver.html';
+        }).catch(() => {
+          const appLinkEl = document.getElementById('dm-app-link');
+          if (appLinkEl) appLinkEl.value = 'https://rpm.gt.tc/driver.html';
+        });
+
+        adminAppConfigUrlRef.once('value').then(snap => {
+          const adminInput = document.getElementById('dm-admin-app-link');
+          if (adminInput) adminInput.value = snap.val() || 'https://diesel.gt.tc/';
+        }).catch(() => {
+          const adminInput = document.getElementById('dm-admin-app-link');
+          if (adminInput) adminInput.value = 'https://diesel.gt.tc/';
+        });
+
+        stationAppConfigUrlRef.once('value').then(snap => {
+          const stationInput = document.getElementById('dm-station-app-link');
+          if (stationInput) stationInput.value = snap.val() || 'https://diesel.gt.tc/files/diesel_filled.html';
+        }).catch(() => {
+          const stationInput = document.getElementById('dm-station-app-link');
+          if (stationInput) stationInput.value = 'https://diesel.gt.tc/files/diesel_filled.html';
+        });
+      }
     } else {
-      // Unlocked! Populate credentials panel
-      showDmPanel('dm-update-panel');
-      
-      document.getElementById('dm-api-key').value = firebaseConfig.apiKey || '';
-      document.getElementById('dm-auth-domain').value = firebaseConfig.authDomain || '';
-      document.getElementById('dm-db-url').value = firebaseConfig.databaseURL || '';
-      document.getElementById('dm-project-id').value = firebaseConfig.projectId || '';
-      document.getElementById('dm-storage-bucket').value = firebaseConfig.storageBucket || '';
-      document.getElementById('dm-sender-id').value = firebaseConfig.messagingSenderId || '';
-      document.getElementById('dm-app-id').value = firebaseConfig.appId || '';
-
-      appConfigUrlRef.once('value').then(snap => {
-        document.getElementById('dm-app-link').value = snap.val() || 'https://rpm.gt.tc/driver.html';
-      }).catch(() => {
-        document.getElementById('dm-app-link').value = 'https://rpm.gt.tc/driver.html';
-      });
-
-      adminAppConfigUrlRef.once('value').then(snap => {
-        const adminInput = document.getElementById('dm-admin-app-link');
-        if (adminInput) adminInput.value = snap.val() || 'https://diesel.gt.tc/';
-      }).catch(() => {
-        const adminInput = document.getElementById('dm-admin-app-link');
-        if (adminInput) adminInput.value = 'https://diesel.gt.tc/';
-      });
-
-      stationAppConfigUrlRef.once('value').then(snap => {
-        const stationInput = document.getElementById('dm-station-app-link');
-        if (stationInput) stationInput.value = snap.val() || 'https://diesel.gt.tc/files/diesel_filled.html';
-      }).catch(() => {
-        const stationInput = document.getElementById('dm-station-app-link');
-        if (stationInput) stationInput.value = 'https://diesel.gt.tc/files/diesel_filled.html';
-      });
+      wrongAttempts++;
+      localStorage.setItem('db_update_attempts', wrongAttempts.toString());
+      if (wrongAttempts >= 3) {
+        const expTime = Date.now() + 30 * 60 * 1000; // 30 mins lock
+        localStorage.setItem('db_update_lockout_exp', expTime.toString());
+        toast.err("Too many wrong attempts! Locked out for 30 minutes.");
+        runLockoutCountdown();
+      } else {
+        toast.err("Incorrect passcode. Try again.");
+      }
     }
-  } else {
-    wrongAttempts++;
-    localStorage.setItem('db_update_attempts', wrongAttempts.toString());
-    if (wrongAttempts >= 3) {
-      const expTime = Date.now() + 30 * 60 * 1000; // 30 mins lock
-      localStorage.setItem('db_update_lockout_exp', expTime.toString());
-      toast.err("Too many wrong attempts! Locked out for 30 minutes.");
-      runLockoutCountdown();
-    } else {
-      toast.err("Incorrect passcode. Try again.");
-    }
-  }
-};
+  };
+}
 
 // Save Firebase Config
-document.getElementById('dm-update-submit').onclick = () => {
-  const key = document.getElementById('dm-api-key').value.trim();
-  const auth = document.getElementById('dm-auth-domain').value.trim();
-  const dbUrl = document.getElementById('dm-db-url').value.trim();
-  const proj = document.getElementById('dm-project-id').value.trim();
-  const store = document.getElementById('dm-storage-bucket').value.trim();
-  const sender = document.getElementById('dm-sender-id').value.trim();
-  const appid = document.getElementById('dm-app-id').value.trim();
-  const applink = document.getElementById('dm-app-link').value.trim();
-  const adminApplink = document.getElementById('dm-admin-app-link')?.value.trim();
-  const stationApplink = document.getElementById('dm-station-app-link')?.value.trim();
+const dmUpdateSubmitBtn = document.getElementById('dm-update-submit');
+if (dmUpdateSubmitBtn) {
+  dmUpdateSubmitBtn.onclick = () => {
+    const key = document.getElementById('dm-api-key')?.value.trim() || '';
+    const auth = document.getElementById('dm-auth-domain')?.value.trim() || '';
+    const dbUrl = document.getElementById('dm-db-url')?.value.trim() || '';
+    const proj = document.getElementById('dm-project-id')?.value.trim() || '';
+    const store = document.getElementById('dm-storage-bucket')?.value.trim() || '';
+    const sender = document.getElementById('dm-sender-id')?.value.trim() || '';
+    const appid = document.getElementById('dm-app-id')?.value.trim() || '';
+    const applink = document.getElementById('dm-app-link')?.value.trim() || '';
+    const adminApplink = document.getElementById('dm-admin-app-link')?.value.trim();
+    const stationApplink = document.getElementById('dm-station-app-link')?.value.trim();
 
-  if (!key || !dbUrl) return toast.err("API Key and DB URL cannot be blank.");
+    if (!key || !dbUrl) return toast.err("API Key and DB URL cannot be blank.");
 
-  const customConf = {
-    apiKey: key,
-    authDomain: auth,
-    databaseURL: dbUrl,
-    projectId: proj,
-    storageBucket: store,
-    messagingSenderId: sender,
-    appId: appid
+    const customConf = {
+      apiKey: key,
+      authDomain: auth,
+      databaseURL: dbUrl,
+      projectId: proj,
+      storageBucket: store,
+      messagingSenderId: sender,
+      appId: appid
+    };
+
+    localStorage.setItem('customFirebaseConfig', JSON.stringify(customConf));
+    
+    if (applink) {
+      appConfigUrlRef.set(applink);
+    }
+
+    if (adminApplink) {
+      adminAppConfigUrlRef.set(adminApplink);
+    }
+
+    if (stationApplink) {
+      stationAppConfigUrlRef.set(stationApplink);
+    }
+
+    toast.ok("Custom Firebase credentials & App Links updated. Refreshing page...");
+    setTimeout(() => location.reload(), 1500);
   };
-
-  localStorage.setItem('customFirebaseConfig', JSON.stringify(customConf));
-  
-  if (applink) {
-    appConfigUrlRef.set(applink);
-  }
-
-  if (adminApplink) {
-    adminAppConfigUrlRef.set(adminApplink);
-  }
-
-  if (stationApplink) {
-    stationAppConfigUrlRef.set(stationApplink);
-  }
-
-  toast.ok("Custom Firebase credentials & App Links updated. Refreshing page...");
-  setTimeout(() => location.reload(), 1500);
-};
+}
 
 // Wipe custom configuration
-document.getElementById('dm-update-reset').onclick = () => {
-  if (confirm("Reset configurations back to hardcoded default credentials?")) {
-    localStorage.removeItem('customFirebaseConfig');
-    toast.ok("Configs reset. Reloading...");
-    setTimeout(() => location.reload(), 1200);
-  }
-};
+const dmUpdateResetBtn = document.getElementById('dm-update-reset');
+if (dmUpdateResetBtn) {
+  dmUpdateResetBtn.onclick = () => {
+    if (confirm("Reset configurations back to hardcoded default credentials?")) {
+      localStorage.removeItem('customFirebaseConfig');
+      toast.ok("Configs reset. Reloading...");
+      setTimeout(() => location.reload(), 1200);
+    }
+  };
+}
 
 /* ══════════════════════════════════════════════════════════
    18.0 DATA OPERATIONS PROGRESS BAR & LIVE TASK NOTIFICATION (1% to 100%)
@@ -19345,23 +19379,30 @@ function initUserCallSignaling() {
         document.getElementById('support-user-call-type-icon').className = 'fas fa-desktop text-lg';
         overlay.classList.remove('hidden');
 
-        document.getElementById('support-user-call-accept-btn').onclick = () => {
-          overlay.classList.add('hidden');
-          stopRingtone();
-          acceptUserScreenShare(userKey);
-        };
-        document.getElementById('support-user-call-decline-btn').onclick = () => {
-          overlay.classList.add('hidden');
-          stopRingtone();
-          callRef.update({ screenRequest: 'rejected' });
-        };
+        const acceptBtn = document.getElementById('support-user-call-accept-btn');
+        if (acceptBtn) {
+          acceptBtn.onclick = () => {
+            overlay.classList.add('hidden');
+            stopRingtone();
+            acceptUserScreenShare(userKey);
+          };
+        }
+        const declineBtn = document.getElementById('support-user-call-decline-btn');
+        if (declineBtn) {
+          declineBtn.onclick = () => {
+            overlay.classList.add('hidden');
+            stopRingtone();
+            callRef.update({ screenRequest: 'rejected' });
+          };
+        }
       }
       return;
     } else if (data.screenRequest === 'accepted') {
       if (overlay) overlay.classList.add('hidden');
       if (banner) {
         banner.classList.remove('hidden');
-        document.getElementById('support-user-active-banner-text').innerHTML = `<i class="fas fa-desktop"></i> Screen Share Active`;
+        const bannerText = document.getElementById('support-user-active-banner-text');
+        if (bannerText) bannerText.innerHTML = `<i class="fas fa-desktop"></i> Screen Share Active`;
       }
     } else {
       // If screen share not active, verify if voice call banner should be shown
@@ -19369,7 +19410,8 @@ function initUserCallSignaling() {
         if (overlay) overlay.classList.add('hidden');
         if (banner) {
           banner.classList.remove('hidden');
-          document.getElementById('support-user-active-banner-text').innerHTML = `<i class="fas fa-microphone"></i> Voice Call Active`;
+          const bannerText = document.getElementById('support-user-active-banner-text');
+          if (bannerText) bannerText.innerHTML = `<i class="fas fa-microphone"></i> Voice Call Active`;
         }
       } else {
         if (banner && data.screenRequest !== 'accepted') banner.classList.add('hidden');
@@ -19379,21 +19421,30 @@ function initUserCallSignaling() {
     // 2. Incoming Voice Call
     if (data.status === 'calling' && data.caller === 'admin') {
       if (overlay) {
-        document.getElementById('support-user-call-heading').textContent = 'Incoming Voice Chat';
-        document.getElementById('support-user-call-sub').textContent = 'RPM Support Admin is calling you...';
-        document.getElementById('support-user-call-type-icon').className = 'fas fa-phone text-lg';
+        const headingEl = document.getElementById('support-user-call-heading');
+        if (headingEl) headingEl.textContent = 'Incoming Voice Chat';
+        const subEl = document.getElementById('support-user-call-sub');
+        if (subEl) subEl.textContent = 'RPM Support Admin is calling you...';
+        const iconEl = document.getElementById('support-user-call-type-icon');
+        if (iconEl) iconEl.className = 'fas fa-phone text-lg';
         overlay.classList.remove('hidden');
         
-        document.getElementById('support-user-call-accept-btn').onclick = () => {
-          overlay.classList.add('hidden');
-          stopRingtone();
-          acceptUserVoiceCall(userKey);
-        };
-        document.getElementById('support-user-call-decline-btn').onclick = () => {
-          overlay.classList.add('hidden');
-          stopRingtone();
-          callRef.remove();
-        };
+        const acceptBtn = document.getElementById('support-user-call-accept-btn');
+        if (acceptBtn) {
+          acceptBtn.onclick = () => {
+            overlay.classList.add('hidden');
+            stopRingtone();
+            acceptUserVoiceCall(userKey);
+          };
+        }
+        const declineBtn = document.getElementById('support-user-call-decline-btn');
+        if (declineBtn) {
+          declineBtn.onclick = () => {
+            overlay.classList.add('hidden');
+            stopRingtone();
+            callRef.remove();
+          };
+        }
       }
       return;
     }
