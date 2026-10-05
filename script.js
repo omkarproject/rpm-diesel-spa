@@ -27345,7 +27345,11 @@ function updateFaviconPreview(src) {
   }
 }
 
+let isLogoClearedExplicitly = false;
+let isFaviconClearedExplicitly = false;
+
 window.clearBrandingLogo = function() {
+  isLogoClearedExplicitly = true;
   pendingResizedLogo = null;
   const fileInput = document.getElementById('brand-logo-file');
   if (fileInput) fileInput.value = '';
@@ -27356,6 +27360,7 @@ window.clearBrandingLogo = function() {
 };
 
 window.clearBrandingFavicon = function() {
+  isFaviconClearedExplicitly = true;
   pendingResizedFavicon = null;
   const fileInput = document.getElementById('brand-favicon-file');
   if (fileInput) fileInput.value = '';
@@ -27434,16 +27439,23 @@ window.closeBrandingInfoModal = function() {
 
 window.updateAppBranding = async function() {
   const target = document.getElementById('brand-target').value;
-  const name = document.getElementById('brand-app-name').value.trim();
+  const nameInput = document.getElementById('brand-app-name').value.trim();
   const existing = brandingDataCache[target] || {};
+  const globalExisting = brandingDataCache['all'] || {};
 
-  // Logo
+  // 1. App Name Resolution
+  const appName = nameInput || existing.appName || (target !== 'all' ? globalExisting.appName : '') || '';
+
+  // 2. Logo Resolution
+  let logoUrl = '';
   const logoTypeChecked = document.querySelector('input[name="logo-type"]:checked');
   const logoType = logoTypeChecked ? logoTypeChecked.value : 'link';
-  let logoUrl = '';
 
-  if (logoType === 'link') {
-    logoUrl = document.getElementById('brand-logo-url').value.trim();
+  if (isLogoClearedExplicitly) {
+    logoUrl = '';
+  } else if (logoType === 'link') {
+    const enteredUrl = document.getElementById('brand-logo-url')?.value.trim() || '';
+    logoUrl = enteredUrl || existing.logoUrl || (target !== 'all' ? globalExisting.logoUrl : '') || '';
   } else {
     if (pendingResizedLogo) {
       logoUrl = pendingResizedLogo;
@@ -27456,18 +27468,21 @@ window.updateAppBranding = async function() {
           return toast.error("Failed to resize uploaded logo.");
         }
       } else {
-        logoUrl = existing.logoUrl || '';
+        logoUrl = existing.logoUrl || (target !== 'all' ? globalExisting.logoUrl : '') || '';
       }
     }
   }
 
-  // Favicon
+  // 3. Favicon Resolution
+  let faviconUrl = '';
   const faviconTypeChecked = document.querySelector('input[name="favicon-type"]:checked');
   const faviconType = faviconTypeChecked ? faviconTypeChecked.value : 'link';
-  let faviconUrl = '';
 
-  if (faviconType === 'link') {
-    faviconUrl = document.getElementById('brand-favicon-url').value.trim();
+  if (isFaviconClearedExplicitly) {
+    faviconUrl = '';
+  } else if (faviconType === 'link') {
+    const enteredUrl = document.getElementById('brand-favicon-url')?.value.trim() || '';
+    faviconUrl = enteredUrl || existing.faviconUrl || (target !== 'all' ? globalExisting.faviconUrl : '') || '';
   } else {
     if (pendingResizedFavicon) {
       faviconUrl = pendingResizedFavicon;
@@ -27480,46 +27495,58 @@ window.updateAppBranding = async function() {
           return toast.error("Failed to resize uploaded favicon.");
         }
       } else {
-        faviconUrl = existing.faviconUrl || '';
+        faviconUrl = existing.faviconUrl || (target !== 'all' ? globalExisting.faviconUrl : '') || '';
       }
     }
   }
 
+  // Reset clear flags
+  isLogoClearedExplicitly = false;
+  isFaviconClearedExplicitly = false;
+
   const payload = {
     updatedAt: firebase.database.ServerValue.TIMESTAMP,
-    appName: name || existing.appName || '',
+    appName: appName,
     logoUrl: logoUrl,
     faviconUrl: faviconUrl
   };
 
   try {
     if (target === 'all') {
+      // 1. Set global override 'all'
       await db.ref('settings/branding/all').set(payload);
-      // Keep root keys updated for legacy backwards compatibility
+      // 2. Also set 'admin' so the Admin Website immediately updates without being blocked by old admin keys
+      await db.ref('settings/branding/admin').set(payload);
+      // 3. Keep root keys updated for legacy backwards compatibility
       await db.ref('settings/branding').update({
         appName: payload.appName,
         logoUrl: payload.logoUrl,
         faviconUrl: payload.faviconUrl,
         updatedAt: payload.updatedAt
       });
+
+      if (!brandingDataCache['all']) brandingDataCache['all'] = {};
+      Object.assign(brandingDataCache['all'], payload);
+      if (!brandingDataCache['admin']) brandingDataCache['admin'] = {};
+      Object.assign(brandingDataCache['admin'], payload);
     } else {
       await db.ref(`settings/branding/${target}`).set(payload);
+      if (!brandingDataCache[target]) brandingDataCache[target] = {};
+      Object.assign(brandingDataCache[target], payload);
     }
-
-    if (!brandingDataCache[target]) brandingDataCache[target] = {};
-    Object.assign(brandingDataCache[target], payload);
 
     try {
       localStorage.setItem('rpm_app_branding', JSON.stringify(brandingDataCache));
     } catch(e) {}
 
+    // Apply immediately to current open page!
     applyAppBrandingToPage(brandingDataCache);
 
-    const targetLabel = target === 'all' ? 'All Applications' : (target === 'admin' ? 'Admin Panel' : (target === 'driver' ? 'Driver Request Form' : 'Diesel Station'));
+    const targetLabel = target === 'all' ? 'All Applications (Global Override)' : (target === 'admin' ? 'Admin Panel (Website)' : (target === 'driver' ? 'Driver Request Form' : 'Diesel Station'));
     toast.ok(`Branding successfully updated for ${targetLabel}!`);
   } catch (error) {
     console.error(error);
-    toast.error('Failed to save branding.');
+    toast.error('Failed to save branding: ' + error.message);
   }
 };
 
@@ -27670,40 +27697,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function applyAppBrandingToPage(data) {
   if (!data) return;
-  const path = window.location.pathname;
-  const appKey = path.includes('driver_request') ? 'driver' : (path.includes('diesel_filled') ? 'station' : 'admin');
+  const path = (window.location.pathname || '').toLowerCase();
+  const href = (window.location.href || '').toLowerCase();
+  let appKey = 'admin';
+  if (path.includes('driver_request') || href.includes('driver_request')) appKey = 'driver';
+  else if (path.includes('diesel_filled') || href.includes('diesel_filled')) appKey = 'station';
+
   const globalCfg = data['all'] || {};
   const appCfg = data[appKey] || {};
 
+  // For Admin or any app: use specific app config if non-empty; fallback to global; fallback to root
   const appName = appCfg.appName || globalCfg.appName || data.appName || '';
   const faviconUrl = appCfg.faviconUrl || globalCfg.faviconUrl || data.faviconUrl || '';
   const logoUrl = appCfg.logoUrl || globalCfg.logoUrl || data.logoUrl || '';
 
+  // 1. Update Document Title & Brand Name text elements
   if (appName) {
     document.title = appName;
-    document.querySelectorAll('.sys-brand-name').forEach(el => el.textContent = appName);
+    document.querySelectorAll('.sys-brand-name').forEach(el => {
+      el.textContent = appName;
+    });
   }
+
+  // 2. Update Browser Tab Favicon (Force-reload DOM node for Chrome/Edge tab update)
   if (faviconUrl) {
-    let link = document.querySelector("link[rel~='icon']");
-    if (!link) {
-      link = document.createElement('link');
+    try {
+      document.querySelectorAll("link[rel*='icon']").forEach(el => el.remove());
+
+      let mimeType = 'image/png';
+      if (faviconUrl.includes('.svg') || faviconUrl.startsWith('data:image/svg')) {
+        mimeType = 'image/svg+xml';
+      } else if (faviconUrl.includes('.ico')) {
+        mimeType = 'image/x-icon';
+      }
+
+      const link = document.createElement('link');
       link.id = 'favicon-link';
       link.rel = 'icon';
+      link.type = mimeType;
+      // Add timestamp to break Chrome's tab icon memory cache unless it's a data URI
+      link.href = faviconUrl.startsWith('data:') ? faviconUrl : (faviconUrl + (faviconUrl.includes('?') ? '&' : '?') + 't=' + Date.now());
       document.head.appendChild(link);
+    } catch(e) {
+      console.error("Favicon apply error:", e);
     }
-    link.href = faviconUrl;
   }
+
+  // 3. Update Logos across Header, Sidebar, Splash, Login & Dashboard
   if (logoUrl) {
-    document.querySelectorAll('.sys-brand-logo, #sidebar-logo-img, #header-logo-img, #splash-logo-img, #login-logo-img').forEach(img => {
+    // Remove obsolete content: url() style which breaks CORS and overrides img.src
+    const earlyStyle = document.getElementById('early-brand-style');
+    if (earlyStyle) earlyStyle.remove();
+
+    const logoElements = document.querySelectorAll('.sys-brand-logo, #sidebar-logo-img, #header-logo-img, #splash-logo-img, #login-logo-img');
+    logoElements.forEach(img => {
       img.src = logoUrl;
+      img.removeAttribute('srcset');
     });
-    let earlyStyle = document.getElementById('early-brand-style');
-    if (!earlyStyle) {
-      earlyStyle = document.createElement('style');
-      earlyStyle.id = 'early-brand-style';
-      document.head.appendChild(earlyStyle);
-    }
-    earlyStyle.textContent = '.sys-brand-logo { content: url("' + logoUrl + '") !important; }';
   }
 }
 window.applyAppBrandingToPage = applyAppBrandingToPage;

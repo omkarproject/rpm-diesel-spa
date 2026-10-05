@@ -593,9 +593,9 @@
         const appConfig = rawData[currentApp] || {};
 
         const data = {
-          appName: appConfig.appName || globalConfig.appName,
-          faviconUrl: appConfig.faviconUrl || globalConfig.faviconUrl,
-          logoUrl: appConfig.logoUrl || globalConfig.logoUrl
+          appName: appConfig.appName || globalConfig.appName || rawData.appName || '',
+          faviconUrl: appConfig.faviconUrl || globalConfig.faviconUrl || rawData.faviconUrl || '',
+          logoUrl: appConfig.logoUrl || globalConfig.logoUrl || rawData.logoUrl || ''
         };
 
         if (data.appName) {
@@ -605,29 +605,32 @@
         }
 
         if (data.faviconUrl) {
-          let link = document.querySelector("link[rel~='icon']");
-          if (!link) {
-            link = document.createElement('link');
+          try {
+            document.querySelectorAll("link[rel*='icon']").forEach(el => el.remove());
+            let mimeType = 'image/png';
+            if (data.faviconUrl.includes('.svg') || data.faviconUrl.startsWith('data:image/svg')) {
+              mimeType = 'image/svg+xml';
+            } else if (data.faviconUrl.includes('.ico')) {
+              mimeType = 'image/x-icon';
+            }
+            const link = document.createElement('link');
             link.id = 'favicon-link';
             link.rel = 'icon';
+            link.type = mimeType;
+            link.href = data.faviconUrl.startsWith('data:') ? data.faviconUrl : (data.faviconUrl + (data.faviconUrl.includes('?') ? '&' : '?') + 't=' + Date.now());
             document.head.appendChild(link);
-          } else {
-            link.href = data.faviconUrl;
-          }
+          } catch(e) {}
         }
 
         if (data.logoUrl) {
+          const earlyStyle = document.getElementById('early-brand-style');
+          if (earlyStyle) earlyStyle.remove();
+
           const logoElements = document.querySelectorAll('.sys-brand-logo, #sidebar-logo-img, #header-logo-img, #splash-logo-img, #login-logo-img');
           logoElements.forEach(img => {
             img.src = data.logoUrl;
+            img.removeAttribute('srcset');
           });
-          let earlyStyle = document.getElementById('early-brand-style');
-          if (!earlyStyle) {
-            earlyStyle = document.createElement('style');
-            earlyStyle.id = 'early-brand-style';
-            document.head.appendChild(earlyStyle);
-          }
-          earlyStyle.textContent = '.sys-brand-logo { content: url("' + data.logoUrl + '") !important; }';
         }
       });
     }

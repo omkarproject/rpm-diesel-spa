@@ -65,6 +65,9 @@
 
   <!-- Custom Stylesheet -->
   <link rel="stylesheet" href="style.css?v=7">
+  <!-- Favicon Link -->
+  <link id="favicon-link" rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⛽%3C/text%3E%3C/svg%3E">
+
   <!-- Early Global App Branding Sync (Prevents Default Logo/Favicon Flash on Reload/Open) -->
   <script>
     (function() {
@@ -87,24 +90,19 @@
           document.title = appName;
         }
         if (faviconUrl) {
-          var link = document.querySelector("link[rel~='icon']");
-          if (!link) {
-            link = document.createElement('link');
-            link.id = 'favicon-link';
-            link.rel = 'icon';
-            document.head.appendChild(link);
+          var favLink = document.getElementById('favicon-link');
+          if (favLink) {
+            favLink.removeAttribute('type');
+            favLink.href = faviconUrl;
           }
-          link.href = faviconUrl;
         }
         if (logoUrl) {
-          var style = document.createElement('style');
-          style.id = 'early-brand-style';
-          style.textContent = '.sys-brand-logo { content: url("' + logoUrl + '") !important; }';
-          document.head.appendChild(style);
-
           document.addEventListener('DOMContentLoaded', function() {
             var imgs = document.querySelectorAll('.sys-brand-logo, #sidebar-logo-img, #header-logo-img, #splash-logo-img, #login-logo-img');
-            imgs.forEach(function(img) { img.src = logoUrl; });
+            imgs.forEach(function(img) { 
+              img.src = logoUrl;
+              img.removeAttribute('srcset');
+            });
           });
         }
         if (appName) {
@@ -116,7 +114,6 @@
       } catch(e) {}
     })();
   </script>
-  <link id="favicon-link" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⛽%3C/text%3E%3C/svg%3E">
 </head>
 
 <body class="text-slate-900 dark:text-slate-100 min-h-screen overflow-x-clip">
@@ -6983,8 +6980,8 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=131" defer></script>
-  <script src="broadcast.js?v=4" defer></script>
+  <script src="script.js?v=132" defer></script>
+  <script src="broadcast.js?v=5" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
   <script>
