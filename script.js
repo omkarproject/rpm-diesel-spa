@@ -1,6 +1,7 @@
 
 // High-performance Date string parsing cache initialized globally at top of script
 var _dateStrParseCache = new Map();
+var activeLiveTask = null;
 
 // Geolocation map icon helper
 function getLocationIconHtml(locationObj) {
@@ -9438,15 +9439,15 @@ document.getElementById('dm-update-reset').onclick = () => {
 /* ══════════════════════════════════════════════════════════
    18.0 DATA OPERATIONS PROGRESS BAR & LIVE TASK NOTIFICATION (1% to 100%)
    ══════════════════════════════════════════════════════════ */
-let dmProgressTimer = null;
-let dmProgressAnimInterval = null;
-let dmProgressAutoAdvanceInterval = null;
-let dmProgressStartTime = 0;
-let dmProgressCurrentPercent = 0;
-let dmActiveTaskName = "Operation";
-let dmNotificationDismissTimer = null;
-let activeLiveTask = null;
-let isDmProgressModalMinimized = false;
+var dmProgressTimer = null;
+var dmProgressAnimInterval = null;
+var dmProgressAutoAdvanceInterval = null;
+var dmProgressStartTime = 0;
+var dmProgressCurrentPercent = 0;
+var dmActiveTaskName = "Operation";
+var dmNotificationDismissTimer = null;
+if (typeof activeLiveTask === 'undefined') var activeLiveTask = null;
+var isDmProgressModalMinimized = false;
 
 // Smooth auto-advancing real-time progress simulation during background/network operations
 function startDmProgressAutoAdvance({
@@ -21823,7 +21824,7 @@ function renderNotificationDropdown(actionRequests, pendingUsers = [], pendingVe
   const countBadge = document.getElementById('notification-dropdown-count');
   if (!listContainer) return;
   
-  const hasActiveTask = !!(activeLiveTask && (activeLiveTask.status === 'running' || activeLiveTask.status === 'completed' || activeLiveTask.status === 'failed'));
+  const hasActiveTask = !!(typeof activeLiveTask !== 'undefined' && activeLiveTask && (activeLiveTask.status === 'running' || activeLiveTask.status === 'completed' || activeLiveTask.status === 'failed'));
   const totalCount = actionRequests.length + pendingUsers.length + pendingVehicleReports.length + (hasActiveTask ? 1 : 0);
   
   if (countBadge) {
@@ -22123,7 +22124,7 @@ function updateDriverRequestsBadges() {
     ? allUserAccounts.filter(u => u.status === 'pending' && u.role !== 'admin') 
     : [];
 
-  const hasRunningLiveTask = !!(activeLiveTask && (activeLiveTask.status === 'running' || activeLiveTask.status === 'completed'));
+  const hasRunningLiveTask = !!(typeof activeLiveTask !== 'undefined' && activeLiveTask && (activeLiveTask.status === 'running' || activeLiveTask.status === 'completed'));
   const totalActionPending = !isVendorRole ? (pendingCount + updatePendingCount + pendingUsers.length + (hasRunningLiveTask ? 1 : 0)) : 0;
 
   // Render the notification pop preview dropdown for all non-vendor users (Admin, Incharge, Watcher, Users)
